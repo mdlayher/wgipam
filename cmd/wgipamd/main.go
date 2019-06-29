@@ -12,9 +12,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"strings"
 
+	"github.com/mdlayher/wgdynamic-go"
 	"github.com/mdlayher/wgipam/internal/config"
+	"golang.org/x/sync/errgroup"
 )
 
 // cfgFile is the name of the default configuration file.
@@ -49,6 +53,47 @@ func main() {
 
 	log.Printf("starting with configuration file %q", f.Name())
 
-	// WIP.
-	_ = cfg
+	// Serve on each specified interface and wait for each goroutine to exit.
+	var eg errgroup.Group
+	for _, ifi := range cfg.Interfaces {
+		ll := log.New(os.Stderr, ifi.Name+": ", log.LstdFlags)
+
+		l, err := wgdynamic.Listen(ifi.Name)
+		if err != nil {
+			ll.Fatalf("failed to listen on %q: %v", ifi.Name, err)
+		}
+
+		ll.Printf("listening on %q, serving: %s",
+			l.Addr(), subnetsString(ifi.Subnets))
+
+		s := &wgdynamic.Server{
+			Log: ll,
+			RequestIP: func(src net.Addr, r *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
+				// WIP.
+				ll.Printf("%s: WIP; returning error", src)
+
+				return nil, &wgdynamic.Error{
+					Number:  1,
+					Message: "out of IP addresses",
+				}
+			},
+		}
+
+		eg.Go(func() error {
+			return s.Serve(l)
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
+
+func subnetsString(subnets []*net.IPNet) string {
+	var ss []string
+	for _, s := range subnets {
+		ss = append(ss, s.String())
+	}
+
+	return strings.Join(ss, ", ")
 }
