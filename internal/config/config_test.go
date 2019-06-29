@@ -39,7 +39,7 @@ interfaces:
   - foo
 `,
 		},
-				{
+		{
 			name: "bad individual IP",
 			s: `
 ---
@@ -69,7 +69,7 @@ interfaces:
   - "192.0.2.0/24"
 `,
 		},
-				{
+		{
 			name: "bad subnet overlap",
 			s: `
 ---
