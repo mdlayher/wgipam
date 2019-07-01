@@ -11,6 +11,7 @@ tasks:
       go get golang.org/x/lint/golint
       go get honnef.co/go/tools/cmd/staticcheck
       cd wgipam/
+      ./.licensecheck.sh
       diff -u <(echo -n) <(/usr/local/go/bin/gofmt -d -s .)
       go vet ./...
       /home/build/go/bin/staticcheck ./...

@@ -8,7 +8,7 @@ For more information about wg-dynamic, please see:
 
 This project is not affiliated with the WireGuard or wg-dynamic projects.
 
-MIT Licensed.
+Apache 2.0 Licensed.
 
 ## Overview
 
