@@ -5,8 +5,8 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
-github.com/mdlayher/wgdynamic-go v0.0.0-20190629152230-2277c3e4b778 h1:J3+rTQE9uiGb+sxgWg7ApFOuL4A3gXAl48gLEV/jBKA=
-github.com/mdlayher/wgdynamic-go v0.0.0-20190629152230-2277c3e4b778/go.mod h1:staa4QipHWulO2zY3fQTR9lvSg96FjQfskm1Wop9eIU=
+github.com/mdlayher/wgdynamic-go v0.0.0-20190702222345-a5d239f098a1 h1:I4dXglKBMerQQZoiYPyAabYsfGvmJ5FkP/ifhvHj7pI=
+github.com/mdlayher/wgdynamic-go v0.0.0-20190702222345-a5d239f098a1/go.mod h1:staa4QipHWulO2zY3fQTR9lvSg96FjQfskm1Wop9eIU=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721 h1:RlZweED6sbSArvlE924+mUcZuXKLBHA35U7LN621Bws=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721/go.mod h1:Ickgr2WtCLZ2MDGd4Gr0geeCH5HybhRJbonOgQpvSxc=
 golang.org/x/sync v0.0.0-20190423024810-112230192c58 h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=

@@ -4,7 +4,7 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/mdlayher/wgdynamic-go v0.0.0-20190629152230-2277c3e4b778
+# github.com/mdlayher/wgdynamic-go v0.0.0-20190702222345-a5d239f098a1
 github.com/mdlayher/wgdynamic-go
 # github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721
 github.com/mikioh/ipaddr

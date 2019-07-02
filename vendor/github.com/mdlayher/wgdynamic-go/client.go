@@ -19,9 +19,11 @@ var serverIP = &net.IPNet{
 }
 
 // A Client can request IP address assignment using the wg-dynamic protocol.
+// Most callers should construct a client using NewClient, which will bind to
+// well-known addresses for wg-dynamic communications.
 type Client struct {
 	// The local and remote TCP addresses for client/server communication.
-	laddr, raddr *net.TCPAddr
+	LocalAddr, RemoteAddr *net.TCPAddr
 }
 
 // NewClient creates a new Client bound to the specified WireGuard interface.
@@ -54,12 +56,12 @@ func newClient(iface string, addrs []net.Addr) (*Client, error) {
 	// Client will listen on a well-known port and send requests to the
 	// well-known server address.
 	return &Client{
-		laddr: &net.TCPAddr{
+		LocalAddr: &net.TCPAddr{
 			IP:   llip.IP,
 			Port: port,
 			Zone: iface,
 		},
-		raddr: &net.TCPAddr{
+		RemoteAddr: &net.TCPAddr{
 			IP:   serverIP.IP,
 			Port: port,
 			Zone: iface,
@@ -120,8 +122,8 @@ var deadlineNow = time.Unix(1, 0)
 // execute executes fn with a network connection backing rw.
 func (c *Client) execute(ctx context.Context, fn func(rw io.ReadWriter) error) error {
 	// The server expects the client to be bound to a specific local address.
-	d := &net.Dialer{LocalAddr: c.laddr}
-	conn, err := d.DialContext(ctx, "tcp6", c.raddr.String())
+	d := &net.Dialer{LocalAddr: c.LocalAddr}
+	conn, err := d.DialContext(ctx, "tcp6", c.RemoteAddr.String())
 	if err != nil {
 		return err
 	}
