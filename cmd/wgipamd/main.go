@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/mdlayher/wgdynamic-go"
+	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/config"
 	"golang.org/x/sync/errgroup"
 )
@@ -79,17 +80,15 @@ func main() {
 		ll.Printf("listening on %q, serving: %s",
 			l.Addr(), subnetsString(ifi.Subnets))
 
-		s := &wgdynamic.Server{
-			Log: ll,
-			RequestIP: func(src net.Addr, r *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
-				// WIP.
-				ll.Printf("%s: WIP; returning error", src)
+		h, err := wgipam.NewHandler(ifi.Subnets)
+		if err != nil {
+			ll.Fatalf("failed to create server handler: %v", err)
+		}
+		h.Log = ll
 
-				return nil, &wgdynamic.Error{
-					Number:  1,
-					Message: "out of IP addresses",
-				}
-			},
+		s := &wgdynamic.Server{
+			Log:       ll,
+			RequestIP: h.RequestIP,
 		}
 
 		eg.Go(func() error {
