@@ -31,6 +31,17 @@ type Handler struct {
 	// IPv4 and IPv6 specify IPStores for IPv4 and IPv6 addresses, respectively.
 	// If either are nil, addresses will not be allocated for that family.
 	IPv4, IPv6 IPStore
+
+	// Leases specifies a LeaseStore for Lease storage. If nil, Leases are not
+	// used, and all incoming requests will allocate new IP addresses.
+	Leases LeaseStore
+
+	// TODO(mdlayher): perhaps generalize NewRequest like net/http.ConnState?
+
+	// NewRequest specifies an optional hook which will be invoked when a new
+	// request is received. The source address src of the remote client is
+	// passed to NewRequest. If NewRequest is nil, it is a no-op.
+	NewRequest func(src net.Addr)
 }
 
 // NewHandler creates a Handler which serves IP addresses from the specified
@@ -73,7 +84,48 @@ func NewHandler(subnets []*net.IPNet) (*Handler, error) {
 }
 
 // RequestIP implements the wg-dynamic request_ip command.
-func (h *Handler) RequestIP(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
+func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
+	if h.NewRequest != nil {
+		// Hook is active, inform the caller of this request.
+		h.NewRequest(src)
+	}
+
+	// TODO(mdlayher): honor requests for specific IP addresses.
+
+	if h.Leases == nil {
+		// Lease store is not configured, always allocate new addresses.
+		return h.allocate(src, req)
+	}
+
+	l, ok, err := h.Leases.Lease(src)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		// No current lease, allocate new addresses.
+		return h.allocate(src, req)
+	}
+
+	// We have a current lease, honor it and update its expiration time.
+	// TODO(mdlayher): lease expiration, parameterize expiration time.
+	l.Start = time.Now()
+	l.Length = 10 * time.Second
+
+	if err := h.Leases.Save(l); err != nil {
+		return nil, err
+	}
+
+	return &wgdynamic.RequestIP{
+		IPv4:       l.IPv4,
+		IPv6:       l.IPv6,
+		LeaseStart: l.Start,
+		LeaseTime:  l.Length,
+	}, nil
+}
+
+// allocate handles new IP address allocation for clients who do not have an
+// existing Lease.
+func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
 	// TODO(mdlayher): honor requests for specific IP addresses.
 
 	ip4, ok4, err := allocate(h.IPv4)

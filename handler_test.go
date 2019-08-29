@@ -35,6 +35,12 @@ func TestHandlerRequestIP(t *testing.T) {
 			Number:  1,
 			Message: "out of IP addresses",
 		}
+
+		ripDualStack = &wgdynamic.RequestIP{
+			IPv4:      sub4,
+			IPv6:      sub6,
+			LeaseTime: 10 * time.Second,
+		}
 	)
 
 	tests := []struct {
@@ -82,11 +88,7 @@ func TestHandlerRequestIP(t *testing.T) {
 
 				return h
 			}(),
-			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
-				IPv6:      sub6,
-				LeaseTime: 10 * time.Second,
-			},
+			rip: ripDualStack,
 			err: errOutOfIPs,
 		},
 		{
@@ -108,11 +110,46 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "OK dual stack",
 			h:    mustHandler([]*net.IPNet{sub4, sub6}),
-			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
-				IPv6:      sub6,
-				LeaseTime: 10 * time.Second,
-			},
+			rip:  ripDualStack,
+		},
+		{
+			name: "OK dual stack no lease",
+			h: func() *wgipam.Handler {
+				h := mustHandler([]*net.IPNet{sub4, sub6})
+
+				// Leases in use, but none are present.
+				h.Leases = wgipam.NewLeaseStore()
+				return h
+			}(),
+			rip: ripDualStack,
+		},
+		{
+			name: "OK dual stack with lease",
+			h: func() *wgipam.Handler {
+				h := mustHandler([]*net.IPNet{sub4, sub6})
+
+				// Leases in use and one will be populated immediately when the
+				// request is received, simulating an existing lease before the
+				// allocation logic can kick in.
+				h.Leases = wgipam.NewLeaseStore()
+				h.NewRequest = func(src net.Addr) {
+					l := &wgipam.Lease{
+						Address: src,
+
+						IPv4:   sub4,
+						IPv6:   sub6,
+						Start:  time.Now(),
+						Length: 10 * time.Second,
+					}
+
+					if err := h.Leases.Save(l); err != nil {
+						t.Fatalf("failed to create initial lease: %v", err)
+					}
+				}
+
+				return h
+			}(),
+			rip: ripDualStack,
 		},
 	}
 
