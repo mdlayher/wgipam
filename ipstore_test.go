@@ -28,6 +28,87 @@ var (
 	sub6 = mustCIDR("2001:db8::/126")
 )
 
+func TestDualStackIPStore(t *testing.T) {
+	contains := func(t *testing.T, ips wgipam.IPStore, sub *net.IPNet) {
+		t.Helper()
+
+		// Allocate an address from the pool and verify it is contained within
+		// the input subnet.
+		ip, ok, err := ips.Allocate()
+		if err != nil {
+			t.Fatalf("failed to allocate from %q: %v", sub, err)
+		}
+		if !ok {
+			t.Fatalf("did not allocate an IP address from %q", sub)
+		}
+
+		if !sub.Contains(ip.IP) {
+			t.Fatalf("allocated IP %q is not within subnet %q", ip, sub)
+		}
+	}
+
+	tests := []struct {
+		name    string
+		subnets []*net.IPNet
+		ok      bool
+		check   func(t *testing.T, ip4s, ip6s wgipam.IPStore)
+	}{
+		{
+			name: "no subnets",
+		},
+		{
+			name:    "OK IPv4 only",
+			subnets: []*net.IPNet{sub4},
+			ok:      true,
+			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+				if ip6s != nil {
+					t.Fatal("allocated IPv6 store but no addresses specified")
+				}
+
+				contains(t, ip4s, sub4)
+			},
+		},
+		{
+			name:    "OK IPv6 only",
+			subnets: []*net.IPNet{sub6},
+			ok:      true,
+			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+				if ip4s != nil {
+					t.Fatal("allocated IPv4 store but no addresses specified")
+				}
+
+				contains(t, ip6s, sub6)
+			},
+		},
+		{
+			name:    "OK dual stack",
+			subnets: []*net.IPNet{sub4, sub6},
+			ok:      true,
+			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+				contains(t, ip4s, sub4)
+				contains(t, ip6s, sub6)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip4s, ip6s, err := wgipam.DualStackIPStore(tt.subnets)
+			if tt.ok && err != nil {
+				t.Fatalf("failed to create IPStores: %v", err)
+			}
+			if !tt.ok && err == nil {
+				t.Fatal("expected an error, but none occurred")
+			}
+			if err != nil {
+				return
+			}
+
+			tt.check(t, ip4s, ip6s)
+		})
+	}
+}
+
 func TestIPStoreAllocate(t *testing.T) {
 	tests := []struct {
 		name    string

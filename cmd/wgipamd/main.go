@@ -80,11 +80,18 @@ func main() {
 		ll.Printf("listening on %q, serving: %s",
 			l.Addr(), subnetsString(ifi.Subnets))
 
-		h, err := wgipam.NewHandler(ifi.Subnets)
+		ip4s, ip6s, err := wgipam.DualStackIPStore(ifi.Subnets)
 		if err != nil {
-			ll.Fatalf("failed to create server handler: %v", err)
+			ll.Fatalf("failed to create IP stores: %v", err)
 		}
-		h.Log = ll
+
+		h := &wgipam.Handler{
+			Log:  ll,
+			IPv4: ip4s,
+			IPv6: ip6s,
+			// TODO(mdlayher): parameterize via config.
+			Leases: wgipam.NewLeaseStore(),
+		}
 
 		s := &wgdynamic.Server{
 			Log:       ll,

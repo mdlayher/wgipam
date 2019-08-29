@@ -14,7 +14,6 @@
 package wgipam
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -42,45 +41,6 @@ type Handler struct {
 	// request is received. The source address src of the remote client is
 	// passed to NewRequest. If NewRequest is nil, it is a no-op.
 	NewRequest func(src net.Addr)
-}
-
-// NewHandler creates a Handler which serves IP addresses from the specified
-// subnets.
-func NewHandler(subnets []*net.IPNet) (*Handler, error) {
-	// At least one subnet must be specified to serve.
-	if len(subnets) == 0 {
-		return nil, errors.New("wgipam: NewHandler must have one or more subnets to serve")
-	}
-
-	// Split subnets by family and create IPStores for each.
-	var sub4, sub6 []*net.IPNet
-	for _, s := range subnets {
-		if s.IP.To4() != nil {
-			sub4 = append(sub4, s)
-		} else {
-			sub6 = append(sub6, s)
-		}
-	}
-
-	var h Handler
-
-	if len(sub4) > 0 {
-		ips, err := NewIPStore(sub4)
-		if err != nil {
-			return nil, err
-		}
-		h.IPv4 = ips
-	}
-
-	if len(sub6) > 0 {
-		ips, err := NewIPStore(sub6)
-		if err != nil {
-			return nil, err
-		}
-		h.IPv6 = ips
-	}
-
-	return &h, nil
 }
 
 // RequestIP implements the wg-dynamic request_ip command.

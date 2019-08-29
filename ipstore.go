@@ -44,7 +44,47 @@ type ipStore struct {
 	out bool
 }
 
-// NewIPStore returns an IPStore which allocates IP addresses from memory.
+// DualStackIPStore returns an IPStore for each IPv4 and IPv6 address allocation.
+// It is a convenience wrapper around NewIPStore that automatically allocates
+// the input subnets into the appropriate IPStore.
+func DualStackIPStore(subnets []*net.IPNet) (ip4s IPStore, ip6s IPStore, err error) {
+	// At least one subnet must be specified to serve.
+	if len(subnets) == 0 {
+		return nil, nil, errors.New("wgipam: DualStackIPStore must have one or more subnets to serve")
+	}
+
+	// Split subnets by family and create IPStores for each.
+	var sub4, sub6 []*net.IPNet
+	for _, s := range subnets {
+		if s.IP.To4() != nil {
+			sub4 = append(sub4, s)
+		} else {
+			sub6 = append(sub6, s)
+		}
+	}
+
+	if len(sub4) > 0 {
+		ips, err := NewIPStore(sub4)
+		if err != nil {
+			return nil, nil, err
+		}
+		ip4s = ips
+	}
+
+	if len(sub6) > 0 {
+		ips, err := NewIPStore(sub6)
+		if err != nil {
+			return nil, nil, err
+		}
+		ip6s = ips
+	}
+
+	return ip4s, ip6s, nil
+}
+
+// NewIPStore returns an IPStore which allocates IP addresses from memory. The
+// specified subnets must use a single IP address family: either IPv4 or IPv6
+// exclusively.
 func NewIPStore(subnets []*net.IPNet) (IPStore, error) {
 	if len(subnets) == 0 {
 		return nil, errors.New("wgipam: NewIPStore requires one or more subnets")

@@ -113,12 +113,12 @@ func TestHandlerRequestIP(t *testing.T) {
 			rip:  ripDualStack,
 		},
 		{
-			name: "OK dual stack no lease",
+			name: "OK dual stack no leases",
 			h: func() *wgipam.Handler {
 				h := mustHandler([]*net.IPNet{sub4, sub6})
 
-				// Leases in use, but none are present.
-				h.Leases = wgipam.NewLeaseStore()
+				// Leases explicitly disabled.
+				h.Leases = nil
 				return h
 			}(),
 			rip: ripDualStack,
@@ -131,7 +131,6 @@ func TestHandlerRequestIP(t *testing.T) {
 				// Leases in use and one will be populated immediately when the
 				// request is received, simulating an existing lease before the
 				// allocation logic can kick in.
-				h.Leases = wgipam.NewLeaseStore()
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
 						Address: src,
@@ -191,12 +190,17 @@ func TestHandlerRequestIP(t *testing.T) {
 }
 
 func mustHandler(subnets []*net.IPNet) *wgipam.Handler {
-	h, err := wgipam.NewHandler(subnets)
+	ip4s, ip6s, err := wgipam.DualStackIPStore(subnets)
 	if err != nil {
-		panicf("failed to create handler: %v", err)
+		panicf("failed to create IP stores: %v", err)
 	}
 
-	return h
+	return &wgipam.Handler{
+		IPv4: ip4s,
+		IPv6: ip6s,
+		// Leases are always ephemeral in this test handler.
+		Leases: wgipam.NewLeaseStore(),
+	}
 }
 
 func testClient(t *testing.T, h *wgipam.Handler) (*wgdynamic.Client, func()) {
