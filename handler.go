@@ -90,8 +90,23 @@ func (h *Handler) RequestIP(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.Re
 	if h.IPv4 == nil && h.IPv6 == nil ||
 		(h.IPv4 != nil && !ok4) ||
 		(h.IPv6 != nil && !ok6) {
-		// TODO(mdlayher): also free any temporarily allocated IP addresses.
 		h.logf(src, "out of IP addresses")
+
+		// We must also free the address of the other pool in case just one of
+		// the address family pools was empty.
+		if ip4 != nil {
+			if err := h.IPv4.Free(ip4); err != nil {
+				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
+				h.logf(src, "failed to free temporarily allocated IPv4 address: %s", ip4)
+			}
+		}
+		if ip6 != nil {
+			if err := h.IPv6.Free(ip6); err != nil {
+				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
+				h.logf(src, "failed to free temporarily allocated IPv6 address: %s", ip6)
+			}
+		}
+
 		return nil, &wgdynamic.Error{
 			Number:  1,
 			Message: "out of IP addresses",

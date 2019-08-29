@@ -30,6 +30,11 @@ func TestHandlerRequestIP(t *testing.T) {
 	var (
 		sub4 = mustCIDR("192.0.2.0/32")
 		sub6 = mustCIDR("2001:db8::/128")
+
+		errOutOfIPs = &wgdynamic.Error{
+			Number:  1,
+			Message: "out of IP addresses",
+		}
 	)
 
 	tests := []struct {
@@ -46,10 +51,43 @@ func TestHandlerRequestIP(t *testing.T) {
 				IPv6:      sub6,
 				LeaseTime: 10 * time.Second,
 			},
-			err: &wgdynamic.Error{
-				Number:  1,
-				Message: "out of IP addresses",
+			err: errOutOfIPs,
+		},
+		{
+			name: "out of IPv4",
+			h: func() *wgipam.Handler {
+				h := mustHandler([]*net.IPNet{sub4, sub6})
+
+				if _, ok, err := h.IPv4.Allocate(); !ok || err != nil {
+					t.Fatalf("failed to allocate last IPv4 address: %v, %v", ok, err)
+				}
+
+				return h
+			}(),
+			rip: &wgdynamic.RequestIP{
+				IPv4:      sub4,
+				IPv6:      sub6,
+				LeaseTime: 10 * time.Second,
 			},
+			err: errOutOfIPs,
+		},
+		{
+			name: "out of IPv6",
+			h: func() *wgipam.Handler {
+				h := mustHandler([]*net.IPNet{sub4, sub6})
+
+				if _, ok, err := h.IPv6.Allocate(); !ok || err != nil {
+					t.Fatalf("failed to allocate last IPv6 address: %v, %v", ok, err)
+				}
+
+				return h
+			}(),
+			rip: &wgdynamic.RequestIP{
+				IPv4:      sub4,
+				IPv6:      sub6,
+				LeaseTime: 10 * time.Second,
+			},
+			err: errOutOfIPs,
 		},
 		{
 			name: "OK IPv4",
