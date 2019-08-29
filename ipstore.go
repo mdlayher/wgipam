@@ -28,6 +28,9 @@ type IPStore interface {
 	// Allocate allocates the next available IP address. It returns false
 	// if no more IP addresses are available.
 	Allocate() (ip *net.IPNet, ok bool, err error)
+
+	// Free returns an allocated IP address to the IPStore.
+	Free(ip *net.IPNet) error
 }
 
 var _ IPStore = &ipStore{}
@@ -87,4 +90,13 @@ func (s *ipStore) Allocate() (*net.IPNet, bool, error) {
 		IP:   p.IP,
 		Mask: p.Prefix.Mask,
 	}, true, nil
+}
+
+// Free implements IPStore.
+func (s *ipStore) Free(ip *net.IPNet) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// TODO(mdlayher): actually free the address.
+	return nil
 }
