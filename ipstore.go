@@ -15,6 +15,7 @@ package wgipam
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 
@@ -38,6 +39,7 @@ var _ IPStore = &ipStore{}
 // An ipStore is an in-memory IPStore implementation.
 type ipStore struct {
 	mu  sync.Mutex
+	m   map[*net.IPNet]struct{}
 	c   *ipaddr.Cursor
 	out bool
 }
@@ -64,6 +66,7 @@ func NewIPStore(subnets []*net.IPNet) (IPStore, error) {
 	}
 
 	return &ipStore{
+		m: make(map[*net.IPNet]struct{}),
 		c: ipaddr.NewCursor(ps),
 	}, nil
 }
@@ -84,12 +87,14 @@ func (s *ipStore) Allocate() (*net.IPNet, bool, error) {
 		s.out = true
 	}
 
-	// TODO(mdlayher): track the allocation in a map.
-
-	return &net.IPNet{
+	// Mark this address as allocated and return.
+	ip := &net.IPNet{
 		IP:   p.IP,
 		Mask: p.Prefix.Mask,
-	}, true, nil
+	}
+	s.m[ip] = struct{}{}
+
+	return ip, true, nil
 }
 
 // Free implements IPStore.
@@ -97,6 +102,11 @@ func (s *ipStore) Free(ip *net.IPNet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// TODO(mdlayher): actually free the address.
+	// Verify the address was actually allocated.
+	if _, ok := s.m[ip]; !ok {
+		return fmt.Errorf("wgipam: IP address %q was not allocated", ip)
+	}
+
+	delete(s.m, ip)
 	return nil
 }

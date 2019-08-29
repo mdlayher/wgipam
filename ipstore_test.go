@@ -23,12 +23,12 @@ import (
 	"github.com/mikioh/ipaddr"
 )
 
-func TestIPStoreAllocate(t *testing.T) {
-	var (
-		sub4 = mustCIDR("192.0.2.0/30")
-		sub6 = mustCIDR("2001:db8::/126")
-	)
+var (
+	sub4 = mustCIDR("192.0.2.0/30")
+	sub6 = mustCIDR("2001:db8::/126")
+)
 
+func TestIPStoreAllocate(t *testing.T) {
 	tests := []struct {
 		name    string
 		subnets []*net.IPNet
@@ -115,6 +115,65 @@ func TestIPStoreAllocate(t *testing.T) {
 
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatalf("unexpected IP addresses (-want +got):\n%s", diff)
+			}
+
+			// Ensure all the addresses are freed as well.
+			for _, ipn := range ipns {
+				if err := ips.Free(ipn); err != nil {
+					t.Fatalf("failed to free IP address: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestIPStoreFree(t *testing.T) {
+	tests := []struct {
+		name    string
+		subnets []*net.IPNet
+		alloc   func(t *testing.T, ips wgipam.IPStore) *net.IPNet
+		ok      bool
+	}{
+		{
+			name:    "not allocated",
+			subnets: []*net.IPNet{sub4},
+			alloc: func(_ *testing.T, _ wgipam.IPStore) *net.IPNet {
+				// Allocate a random address outside of sub4.
+				return mustCIDR("192.0.2.1/32")
+			},
+		},
+		{
+			name:    "allocated",
+			subnets: []*net.IPNet{sub6},
+			alloc: func(t *testing.T, ips wgipam.IPStore) *net.IPNet {
+				// Allocate directly from sub6.
+				ip, ok, err := ips.Allocate()
+				if err != nil {
+					t.Fatalf("failed to allocate IPs: %v", err)
+				}
+				if !ok {
+					t.Fatal("out of IP addresses")
+				}
+
+				return ip
+			},
+			ok: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ips, err := wgipam.NewIPStore(tt.subnets)
+			if err != nil {
+				t.Fatalf("failed to create IPStore: %v", err)
+			}
+
+			err = ips.Free(tt.alloc(t, ips))
+			if tt.ok && err != nil {
+				t.Fatalf("failed to allocate and free IP address: %v", err)
+			}
+			if !tt.ok && err == nil {
+				t.Fatal("expected an error, but none occurred")
 			}
 		})
 	}
