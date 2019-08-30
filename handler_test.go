@@ -122,7 +122,7 @@ func TestHandlerRequestIP(t *testing.T) {
 				// allocation logic can kick in.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						Address: src,
+						Key: src.String(),
 
 						IPv4:   sub4,
 						IPv6:   sub6,
@@ -149,7 +149,7 @@ func TestHandlerRequestIP(t *testing.T) {
 				// be ignored.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						Address: src,
+						Key: src.String(),
 
 						// Use an address that will not be allocated by our
 						// configuration and verify it is removed.
@@ -224,7 +224,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			}}
 
 			for i := range leases {
-				leases[i].Address = nil
+				leases[i].Key = ""
 				leases[i].Start = time.Time{}
 			}
 

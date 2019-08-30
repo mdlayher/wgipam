@@ -62,7 +62,7 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	}
 
 	// Check for an existing lease.
-	l, ok, err := h.Leases.Lease(src)
+	l, ok, err := h.Leases.Lease(src.String())
 	if err != nil {
 		return nil, err
 	}
@@ -152,11 +152,11 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 	}
 
 	l := &Lease{
-		Address: src,
-		IPv4:    res.IPv4,
-		IPv6:    res.IPv6,
-		Start:   res.LeaseStart,
-		Length:  res.LeaseTime,
+		Key:    src.String(),
+		IPv4:   res.IPv4,
+		IPv6:   res.IPv6,
+		Start:  res.LeaseStart,
+		Length: res.LeaseTime,
 	}
 
 	h.logf(src, "creating new IP address lease: %s", l)

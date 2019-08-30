@@ -15,15 +15,20 @@ package wgipam
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
 )
 
-// A Lease is a record of allocated IP addresses, assigned to a client by source
-// address.
+var (
+	_ LeaseStore = &memoryLeaseStore{}
+)
+
+// A Lease is a record of allocated IP addresses, assigned to a client by a Key
+// (typically a source address).
 type Lease struct {
-	Address net.Addr
+	Key string
 
 	IPv4, IPv6 *net.IPNet
 	Start      time.Time
@@ -41,14 +46,18 @@ func (l *Lease) String() string {
 	)
 }
 
-// A LeaseStore manages Leases.
+// A LeaseStore manages Leases. To ensure compliance with the expected behaviors
+// of the LeaseStore interface, use the wgipamtest.TestLeaseStore function.
 type LeaseStore interface {
+	// Close syncs and closes the LeaseStore's internal state.
+	io.Closer
+
 	// Leases returns all existing Leases.
 	Leases() (leases []*Lease, err error)
 
-	// Lease returns the Lease for source address src. It returns false if no
-	// Lease exists for src.
-	Lease(src net.Addr) (lease *Lease, ok bool, err error)
+	// Lease returns the Lease identified by key. It returns false if no
+	// Lease exists for key.
+	Lease(key string) (lease *Lease, ok bool, err error)
 
 	// Save creates or updates a Lease.
 	Save(lease *Lease) error
@@ -57,23 +66,24 @@ type LeaseStore interface {
 	Delete(lease *Lease) error
 }
 
-var _ LeaseStore = &leaseStore{}
-
-// A leaseStore is an in-memory LeaseStore implementation.
-type leaseStore struct {
+// A memoryLeaseStore is an in-memory LeaseStore implementation.
+type memoryLeaseStore struct {
 	mu sync.RWMutex
 	m  map[string]*Lease
 }
 
 // MemoryLeaseStore returns a LeaseStore which stores Leases in memory.
 func MemoryLeaseStore() LeaseStore {
-	return &leaseStore{
+	return &memoryLeaseStore{
 		m: make(map[string]*Lease),
 	}
 }
 
+// Close implements LeaseStore.
+func (s *memoryLeaseStore) Close() error { return nil }
+
 // Leases implements LeaseStore.
-func (s *leaseStore) Leases() ([]*Lease, error) {
+func (s *memoryLeaseStore) Leases() ([]*Lease, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -86,34 +96,33 @@ func (s *leaseStore) Leases() ([]*Lease, error) {
 }
 
 // Lease implements LeaseStore.
-func (s *leaseStore) Lease(src net.Addr) (*Lease, bool, error) {
+func (s *memoryLeaseStore) Lease(key string) (*Lease, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	l, ok := s.m[src.String()]
+	l, ok := s.m[key]
 	return l, ok, nil
 }
 
 // Save implements LeaseStore.
-func (s *leaseStore) Save(l *Lease) error {
+func (s *memoryLeaseStore) Save(l *Lease) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.m[l.Address.String()] = l
+	s.m[l.Key] = l
 	return nil
 }
 
 // Delete implements LeaseStore.
-func (s *leaseStore) Delete(l *Lease) error {
+func (s *memoryLeaseStore) Delete(l *Lease) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Verify the lease was actually allocated.
-	str := l.Address.String()
-	if _, ok := s.m[str]; !ok {
-		return fmt.Errorf("wgipam: no lease for client %q", str)
+	if _, ok := s.m[l.Key]; !ok {
+		return fmt.Errorf("wgipam: no lease for client %q", l.Key)
 	}
 
-	delete(s.m, str)
+	delete(s.m, l.Key)
 	return nil
 }
