@@ -48,6 +48,12 @@ func (l *Lease) String() string {
 	)
 }
 
+// Expired determines if the Lease is expired as of time t.
+func (l *Lease) Expired(t time.Time) bool {
+	exp := l.Start.Add(l.Length)
+	return exp.Before(t) || exp.Equal(t)
+}
+
 // TODO(mdlayher): JSON is quick and easy but it's probably best to build out
 // a binary format.
 
@@ -83,6 +89,11 @@ type LeaseStore interface {
 	// Attempting to delete an item that did not already exist should not
 	// return an error.
 	Delete(key uint64) error
+
+	// Purge purge Leases which expire on or before the specified point in time.
+	// Purge operations that specify the same point in time should be
+	// idempotent; the same rules apply as with Delete.
+	Purge(t time.Time) error
 }
 
 // A memoryLeaseStore is an in-memory LeaseStore implementation.
@@ -141,6 +152,20 @@ func (s *memoryLeaseStore) Delete(key uint64) error {
 	delete(s.m, key)
 	return nil
 }
+
+// Purge implements LeaseStore.
+func (s *memoryLeaseStore) Purge(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Deleting from a map during iteration is okay:
+	// https://golang.org/doc/effective_go.html#for.
+	for k, v := range s.m {
+		if v.Expired(t) {
+			delete(s.m, k)
+		}
+	}
+
 	return nil
 }
 
@@ -248,6 +273,40 @@ func (s *boltLeaseStore) Delete(key uint64) error {
 		return tx.Bucket(bucketLeases).Delete(keyBytes(key))
 	})
 }
+
+// Purge implements LeaseStore.
+func (s *boltLeaseStore) Purge(t time.Time) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// Track keys for removal after iteration completes.
+		var keys [][]byte
+
+		b := tx.Bucket(bucketLeases)
+		err := b.ForEach(func(k []byte, v []byte) error {
+			var l Lease
+			if err := l.unmarshal(v); err != nil {
+				return err
+			}
+
+			if l.Expired(t) {
+				keys = append(keys, k)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, k := range keys {
+			if err := b.Delete(k); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // strKey hashes s into a key.
 func strKey(s string) uint64 {
 	// Must be kept in sync with wgipam_test.strKey as well.

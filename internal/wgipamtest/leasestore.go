@@ -68,6 +68,10 @@ func TestLeaseStore(t *testing.T, mls MakeLeaseStore) {
 			name: "delete lease OK",
 			fn:   testDeleteLeaseOK,
 		},
+		{
+			name: "purge lease OK",
+			fn:   testPurgeLeaseOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -180,6 +184,54 @@ func testDeleteLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 	}
 	if ok {
 		t.Fatal("expected no lease but one was found")
+	}
+}
+
+func testPurgeLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
+	t.Helper()
+
+	// Leases start every 100 seconds and last 10 seconds.
+	const (
+		start  = 100
+		length = 10
+	)
+
+	var want []*wgipam.Lease
+	for i := 0; i < 3; i++ {
+		// Create leases which start at regular intervals.
+		l := *okLease
+		l.Start = time.Unix((int64(i)+1)*start, 0)
+		l.Length = length * time.Second
+
+		if i == 2 {
+			// Track final lease for later comparison.
+			want = []*wgipam.Lease{&l}
+		}
+
+		if err := ls.Save(uint64(i), &l); err != nil {
+			t.Fatalf("failed to save lease: %v", err)
+		}
+	}
+
+	// Purge only some of the leases by selecting a time that matches the
+	// expiration time of the second lease.
+	purge := time.Unix(2*start+length, 0)
+
+	// Repeated purges with the same time should be idempotent.
+	for i := 0; i < 3; i++ {
+		if err := ls.Purge(purge); err != nil {
+			t.Fatalf("failed to purge leases: %v", err)
+		}
+	}
+
+	// Expect only one lease to remain.
+	got, err := ls.Leases()
+	if err != nil {
+		t.Fatalf("failed to get lease: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected Leases (-want +got):\n%s", diff)
 	}
 }
 
