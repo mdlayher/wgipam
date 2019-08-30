@@ -14,15 +14,19 @@
 package wgipam
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"go.etcd.io/bbolt"
 )
 
 var (
 	_ LeaseStore = &memoryLeaseStore{}
+	_ LeaseStore = &boltLeaseStore{}
 )
 
 // A Lease is a record of allocated IP addresses, assigned to a client by a Key
@@ -44,6 +48,19 @@ func (l *Lease) String() string {
 		l.Start.Format(time.Stamp),
 		l.Start.Add(l.Length).Format(time.Stamp),
 	)
+}
+
+// TODO(mdlayher): JSON is quick and easy but it's probably best to build out
+// a binary format.
+
+// marshal marshals a Lease to binary form.
+func (l *Lease) marshal() ([]byte, error) {
+	return json.Marshal(l)
+}
+
+// unmarshal unmarshals a Lease from binary form.
+func (l *Lease) unmarshal(b []byte) error {
+	return json.Unmarshal(b, l)
 }
 
 // A LeaseStore manages Leases. To ensure compliance with the expected behaviors
@@ -125,4 +142,109 @@ func (s *memoryLeaseStore) Delete(l *Lease) error {
 
 	delete(s.m, l.Key)
 	return nil
+}
+
+// Bolt database bucket names.
+var (
+	bucketLeases = []byte("leases")
+)
+
+// A leaseStore is an in-memory LeaseStore implementation.
+type boltLeaseStore struct {
+	db *bbolt.DB
+}
+
+// FileLeaseStore returns a LeaseStore which stores Leases in a file on disk.
+func FileLeaseStore(file string) (LeaseStore, error) {
+	// The file store uses bolt, but this is considered an implementation
+	// detail and there's no need to expose this as BoltLeaseStore or similar.
+	db, err := bbolt.Open(file, 0644, &bbolt.Options{
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(bucketLeases)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &boltLeaseStore{
+		db: db,
+	}, nil
+}
+
+// Close implements LeaseStore.
+func (s *boltLeaseStore) Close() error { return s.db.Close() }
+
+// Leases implements LeaseStore.
+func (s *boltLeaseStore) Leases() ([]*Lease, error) {
+	var leases []*Lease
+
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		// Unmarshal each Lease from its bucket.
+		return tx.Bucket(bucketLeases).ForEach(func(_ []byte, v []byte) error {
+			var l Lease
+			if err := l.unmarshal(v); err != nil {
+				return err
+			}
+
+			leases = append(leases, &l)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return leases, nil
+}
+
+// Lease implements LeaseStore.
+func (s *boltLeaseStore) Lease(key string) (*Lease, bool, error) {
+	var l *Lease
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		v := tx.Bucket(bucketLeases).Get([]byte(key))
+		if v == nil {
+			// No lease found, do not populate l.
+			return nil
+		}
+
+		l = &Lease{}
+		return l.unmarshal(v)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	if l == nil {
+		// No lease found.
+		return nil, false, nil
+	}
+
+	// Lease found.
+	return l, true, nil
+}
+
+// Save implements LeaseStore.
+func (s *boltLeaseStore) Save(l *Lease) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		lb, err := l.marshal()
+		if err != nil {
+			return err
+		}
+
+		return tx.Bucket(bucketLeases).Put([]byte(l.Key), lb)
+	})
+}
+
+// Delete implements LeaseStore.
+func (s *boltLeaseStore) Delete(l *Lease) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return tx.Bucket(bucketLeases).Delete([]byte(l.Key))
+	})
 }
