@@ -16,6 +16,8 @@ package wgipamtest
 import (
 	"fmt"
 	"net"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -54,12 +56,20 @@ func TestLeaseStore(t *testing.T, mls MakeLeaseStore) {
 			fn:   testLeasesEmpty,
 		},
 		{
+			name: "leases OK",
+			fn:   testLeasesOK,
+		},
+		{
 			name: "lease not exist",
 			fn:   testLeaseNotExist,
 		},
 		{
 			name: "save lease OK",
 			fn:   testSaveLeaseOK,
+		},
+		{
+			name: "delete lease OK",
+			fn:   testDeleteLeaseOK,
 		},
 	}
 
@@ -81,6 +91,39 @@ func testLeasesEmpty(t *testing.T, ls wgipam.LeaseStore) {
 	}
 	if diff := cmp.Diff(0, len(leases)); diff != "" {
 		t.Fatalf("unexpected number of leases (-want +got):\n%s", diff)
+	}
+}
+
+func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
+	t.Helper()
+
+	// Save some synthetic leases (with unique keys) to be fetched again later.
+	var want []*wgipam.Lease
+	for i := 0; i < 3; i++ {
+		l := *okLease
+		l.Key = strconv.Itoa(i)
+		want = append(want, &l)
+
+		if err := ls.Save(&l); err != nil {
+			t.Fatalf("failed to save lease: %v", err)
+		}
+	}
+
+	got, err := ls.Leases()
+	if err != nil {
+		t.Fatalf("failed to get leases: %v", err)
+	}
+
+	// No ordering guarantees are made, so sort both slices for comparison.
+	sort.Slice(want, func(i, j int) bool {
+		return want[i].Key < want[j].Key
+	})
+	sort.Slice(got, func(i, j int) bool {
+		return got[i].Key < got[j].Key
+	})
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected Leases (-want +got):\n%s", diff)
 	}
 }
 
@@ -116,6 +159,29 @@ func testSaveLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 
 	if diff := cmp.Diff(okLease, l); diff != "" {
 		t.Fatalf("unexpected Lease (-want +got):\n%s", diff)
+	}
+}
+
+func testDeleteLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
+	t.Helper()
+
+	if err := ls.Save(okLease); err != nil {
+		t.Fatalf("failed to save lease: %v", err)
+	}
+
+	// Repeated deletions should be idempotent.
+	for i := 0; i < 3; i++ {
+		if err := ls.Delete(okLease); err != nil {
+			t.Fatalf("failed to delete lease: %v", err)
+		}
+	}
+
+	_, ok, err := ls.Lease(okLease.Key)
+	if err != nil {
+		t.Fatalf("failed to get lease: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no lease but one was found")
 	}
 }
 
