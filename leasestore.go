@@ -52,7 +52,8 @@ type LeaseStore interface {
 	// Close syncs and closes the LeaseStore's internal state.
 	io.Closer
 
-	// Leases returns all existing Leases.
+	// Leases returns all existing Leases. Note that the order of the Leases
+	// is unspecified. The caller must sort the leases for deterministic output.
 	Leases() (leases []*Lease, err error)
 
 	// Lease returns the Lease identified by key. It returns false if no
@@ -62,7 +63,10 @@ type LeaseStore interface {
 	// Save creates or updates a Lease.
 	Save(lease *Lease) error
 
-	// Delete deletes a Lease.
+	// Delete deletes a Lease. Delete operations should be idempotent; that is,
+	// an error should only be returned if the delete operation fails.
+	// Attempting to delete an item that did not already exist should not
+	// return an error.
 	Delete(lease *Lease) error
 }
 
@@ -87,6 +91,7 @@ func (s *memoryLeaseStore) Leases() ([]*Lease, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Return order is unspecified, so map iteration is no problem.
 	ls := make([]*Lease, 0, len(s.m))
 	for _, l := range s.m {
 		ls = append(ls, l)
@@ -117,11 +122,6 @@ func (s *memoryLeaseStore) Save(l *Lease) error {
 func (s *memoryLeaseStore) Delete(l *Lease) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// Verify the lease was actually allocated.
-	if _, ok := s.m[l.Key]; !ok {
-		return fmt.Errorf("wgipam: no lease for client %q", l.Key)
-	}
 
 	delete(s.m, l.Key)
 	return nil
