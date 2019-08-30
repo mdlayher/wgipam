@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	_ LeaseStore = &memoryLeaseStore{}
-	_ LeaseStore = &boltLeaseStore{}
+	_ Store = &memoryStore{}
+	_ Store = &boltStore{}
 )
 
 // A Lease is a record of allocated IP addresses assigned to a client.
@@ -67,10 +67,10 @@ func (l *Lease) unmarshal(b []byte) error {
 	return json.Unmarshal(b, l)
 }
 
-// A LeaseStore manages Leases. To ensure compliance with the expected behaviors
-// of the LeaseStore interface, use the wgipamtest.TestLeaseStore function.
-type LeaseStore interface {
-	// Close syncs and closes the LeaseStore's internal state.
+// A Store manages Leases. To ensure compliance with the expected behaviors
+// of the Store interface, use the wgipamtest.TestStore function.
+type Store interface {
+	// Close syncs and closes the Store's internal state.
 	io.Closer
 
 	// Leases returns all existing Leases. Note that the order of the Leases
@@ -81,14 +81,14 @@ type LeaseStore interface {
 	// Lease exists for key.
 	Lease(key uint64) (lease *Lease, ok bool, err error)
 
-	// Save creates or updates a Lease by key.
-	Save(key uint64, lease *Lease) error
+	// SaveLease creates or updates a Lease by key.
+	SaveLease(key uint64, lease *Lease) error
 
-	// Delete deletes a Lease by key. Delete operations should be idempotent;
+	// DeleteLease deletes a Lease by key. Delete operations should be idempotent;
 	// that is, an error should only be returned if the delete operation fails.
 	// Attempting to delete an item that did not already exist should not
 	// return an error.
-	Delete(key uint64) error
+	DeleteLease(key uint64) error
 
 	// Purge purge Leases which expire on or before the specified point in time.
 	// Purge operations that specify the same point in time should be
@@ -96,24 +96,24 @@ type LeaseStore interface {
 	Purge(t time.Time) error
 }
 
-// A memoryLeaseStore is an in-memory LeaseStore implementation.
-type memoryLeaseStore struct {
+// A memoryStore is an in-memory Store implementation.
+type memoryStore struct {
 	mu sync.RWMutex
 	m  map[uint64]*Lease
 }
 
-// MemoryLeaseStore returns a LeaseStore which stores Leases in memory.
-func MemoryLeaseStore() LeaseStore {
-	return &memoryLeaseStore{
+// MemoryStore returns a Store which stores Leases in memory.
+func MemoryStore() Store {
+	return &memoryStore{
 		m: make(map[uint64]*Lease),
 	}
 }
 
-// Close implements LeaseStore.
-func (s *memoryLeaseStore) Close() error { return nil }
+// Close implements Store.
+func (s *memoryStore) Close() error { return nil }
 
-// Leases implements LeaseStore.
-func (s *memoryLeaseStore) Leases() ([]*Lease, error) {
+// Leases implements Store.
+func (s *memoryStore) Leases() ([]*Lease, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -126,8 +126,8 @@ func (s *memoryLeaseStore) Leases() ([]*Lease, error) {
 	return ls, nil
 }
 
-// Lease implements LeaseStore.
-func (s *memoryLeaseStore) Lease(key uint64) (*Lease, bool, error) {
+// Lease implements Store.
+func (s *memoryStore) Lease(key uint64) (*Lease, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -135,8 +135,8 @@ func (s *memoryLeaseStore) Lease(key uint64) (*Lease, bool, error) {
 	return l, ok, nil
 }
 
-// Save implements LeaseStore.
-func (s *memoryLeaseStore) Save(key uint64, l *Lease) error {
+// SaveLease implements Store.
+func (s *memoryStore) SaveLease(key uint64, l *Lease) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -144,8 +144,8 @@ func (s *memoryLeaseStore) Save(key uint64, l *Lease) error {
 	return nil
 }
 
-// Delete implements LeaseStore.
-func (s *memoryLeaseStore) Delete(key uint64) error {
+// DeleteLease implements Store.
+func (s *memoryStore) DeleteLease(key uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -153,8 +153,8 @@ func (s *memoryLeaseStore) Delete(key uint64) error {
 	return nil
 }
 
-// Purge implements LeaseStore.
-func (s *memoryLeaseStore) Purge(t time.Time) error {
+// Purge implements Store.
+func (s *memoryStore) Purge(t time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -174,15 +174,15 @@ var (
 	bucketLeases = []byte("leases")
 )
 
-// A leaseStore is an in-memory LeaseStore implementation.
-type boltLeaseStore struct {
+// A leaseStore is an in-memory Store implementation.
+type boltStore struct {
 	db *bbolt.DB
 }
 
-// FileLeaseStore returns a LeaseStore which stores Leases in a file on disk.
-func FileLeaseStore(file string) (LeaseStore, error) {
+// FileStore returns a Store which stores Leases in a file on disk.
+func FileStore(file string) (Store, error) {
 	// The file store uses bolt, but this is considered an implementation
-	// detail and there's no need to expose this as BoltLeaseStore or similar.
+	// detail and there's no need to expose this as BoltStore or similar.
 	db, err := bbolt.Open(file, 0644, &bbolt.Options{
 		Timeout: 5 * time.Second,
 	})
@@ -198,16 +198,16 @@ func FileLeaseStore(file string) (LeaseStore, error) {
 		return nil, err
 	}
 
-	return &boltLeaseStore{
+	return &boltStore{
 		db: db,
 	}, nil
 }
 
-// Close implements LeaseStore.
-func (s *boltLeaseStore) Close() error { return s.db.Close() }
+// Close implements Store.
+func (s *boltStore) Close() error { return s.db.Close() }
 
-// Leases implements LeaseStore.
-func (s *boltLeaseStore) Leases() ([]*Lease, error) {
+// Leases implements Store.
+func (s *boltStore) Leases() ([]*Lease, error) {
 	var leases []*Lease
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -229,8 +229,8 @@ func (s *boltLeaseStore) Leases() ([]*Lease, error) {
 	return leases, nil
 }
 
-// Lease implements LeaseStore.
-func (s *boltLeaseStore) Lease(key uint64) (*Lease, bool, error) {
+// Lease implements Store.
+func (s *boltStore) Lease(key uint64) (*Lease, bool, error) {
 	var l *Lease
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		v := tx.Bucket(bucketLeases).Get(keyBytes(key))
@@ -255,8 +255,8 @@ func (s *boltLeaseStore) Lease(key uint64) (*Lease, bool, error) {
 	return l, true, nil
 }
 
-// Save implements LeaseStore.
-func (s *boltLeaseStore) Save(key uint64, l *Lease) error {
+// SaveLease implements Store.
+func (s *boltStore) SaveLease(key uint64, l *Lease) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		lb, err := l.marshal()
 		if err != nil {
@@ -267,15 +267,15 @@ func (s *boltLeaseStore) Save(key uint64, l *Lease) error {
 	})
 }
 
-// Delete implements LeaseStore.
-func (s *boltLeaseStore) Delete(key uint64) error {
+// DeleteLease implements Store.
+func (s *boltStore) DeleteLease(key uint64) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		return tx.Bucket(bucketLeases).Delete(keyBytes(key))
 	})
 }
 
-// Purge implements LeaseStore.
-func (s *boltLeaseStore) Purge(t time.Time) error {
+// Purge implements Store.
+func (s *boltStore) Purge(t time.Time) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// Track keys for removal after iteration completes.
 		var keys [][]byte

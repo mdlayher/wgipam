@@ -22,7 +22,7 @@ import (
 	"github.com/mdlayher/wgipam/wgipamtest"
 )
 
-func TestLeaseStore(t *testing.T) {
+func TestStore(t *testing.T) {
 	// Set up a temporary directory for bolt database files which will also
 	// be destroyed at the end of the test.
 	dir, err := ioutil.TempDir("", "wgipamd-lease-store-test")
@@ -37,17 +37,17 @@ func TestLeaseStore(t *testing.T) {
 
 	tests := []struct {
 		name string
-		mls  wgipamtest.MakeLeaseStore
+		mls  wgipamtest.MakeStore
 	}{
 		{
 			name: "memory",
-			mls: func(_ *testing.T) wgipam.LeaseStore {
-				return wgipam.MemoryLeaseStore()
+			mls: func(_ *testing.T) wgipam.Store {
+				return wgipam.MemoryStore()
 			},
 		},
 		{
 			name: "file",
-			mls: func(t *testing.T) wgipam.LeaseStore {
+			mls: func(t *testing.T) wgipam.Store {
 				// Create a random temporary file in the temporary directory
 				// and use it as our file store.
 				f, err := ioutil.TempFile(dir, "file.db")
@@ -56,7 +56,7 @@ func TestLeaseStore(t *testing.T) {
 				}
 				_ = f.Close()
 
-				ls, err := wgipam.FileLeaseStore(f.Name())
+				ls, err := wgipam.FileStore(f.Name())
 				if err != nil {
 					t.Fatalf("failed to create file lease store: %v", err)
 				}
@@ -68,7 +68,7 @@ func TestLeaseStore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wgipamtest.TestLeaseStore(t, tt.mls)
+			wgipamtest.TestStore(t, tt.mls)
 		})
 	}
 }

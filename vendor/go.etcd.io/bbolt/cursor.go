@@ -132,7 +132,7 @@ func (c *Cursor) Seek(seek []byte) (key []byte, value []byte) {
 
 // Delete removes the current key/value under the cursor from the bucket.
 // Delete fails if current key/value is a bucket or if the transaction is not writable.
-func (c *Cursor) Delete() error {
+func (c *Cursor) DeleteLease() error {
 	if c.bucket.tx.db == nil {
 		return ErrTxClosed
 	} else if !c.bucket.Writable() {

@@ -128,7 +128,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
+					if err := h.Leases.SaveLease(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -154,7 +154,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
+					if err := h.Leases.SaveLease(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -240,7 +240,7 @@ func mustHandler(subnets []*net.IPNet) *wgipam.Handler {
 		IPv4: ip4s,
 		IPv6: ip6s,
 		// Leases are always ephemeral in this test handler.
-		Leases: wgipam.MemoryLeaseStore(),
+		Leases: wgipam.MemoryStore(),
 	}
 }
 

@@ -140,11 +140,11 @@ func main() {
 		ll := log.New(os.Stderr, ifi.Name+": ", log.LstdFlags)
 
 		// Configure lease storage based on the input configuration.
-		leases, err := newLeaseStore(ifi.Name, cfg.Storage, ll)
+		store, err := newStore(ifi.Name, cfg.Storage, ll)
 		if err != nil {
 			ll.Fatalf("failed to configure lease storage: %v", err)
 		}
-		defer leases.Close()
+		defer store.Close()
 
 		l, err := wgdynamic.Listen(ifi.Name)
 		if err != nil {
@@ -163,7 +163,7 @@ func main() {
 			Log:    ll,
 			IPv4:   ip4s,
 			IPv6:   ip6s,
-			Leases: leases,
+			Leases: store,
 		}
 
 		s := &wgdynamic.Server{
@@ -189,8 +189,8 @@ func main() {
 				case <-ctx.Done():
 					return nil
 				case t := <-tick.C:
-					if err := leases.Purge(t); err != nil {
-						ll.Printf("failed to purge leases: %v", err)
+					if err := store.Purge(t); err != nil {
+						ll.Printf("failed to purge expired data: %v", err)
 					}
 				}
 			}
@@ -202,17 +202,17 @@ func main() {
 	}
 }
 
-// newLeaseStore configures a LeaseStore for the specified interface from
+// newStore configures a Store for the specified interface from
 // storage configuration.
-func newLeaseStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.LeaseStore, error) {
+func newStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.Store, error) {
 	switch {
 	case s.Memory:
-		ll.Println("using ephemeral in-memory storage for leases")
-		return wgipam.MemoryLeaseStore(), nil
+		ll.Println("using ephemeral in-memory storage")
+		return wgipam.MemoryStore(), nil
 	case s.File != "":
 		file := fmt.Sprintf("%s-%s", ifi, s.File)
-		ll.Printf("using file %q for leases", file)
-		return wgipam.FileLeaseStore(file)
+		ll.Printf("using file %q storage", file)
+		return wgipam.FileStore(file)
 	default:
 		return nil, fmt.Errorf("invalid storage configuration: %#v", s)
 	}

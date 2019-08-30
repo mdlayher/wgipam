@@ -34,19 +34,19 @@ var (
 	}
 )
 
-// MakeLeaseStore is a function which produces a new wgipam.LeaseStore on each
-// invocation. The LeaseStore should be completely empty when created.
-type MakeLeaseStore func(t *testing.T) wgipam.LeaseStore
+// MakeStore is a function which produces a new wgipam.Store on each
+// invocation. The Store should be completely empty when created.
+type MakeStore func(t *testing.T) wgipam.Store
 
-// TestLeaseStore tests a wgipam.LeaseStore type for compliance with the
-// interface. The MakeLeaseStore function is invoked to retrieve a new and empty
-// LeaseStore for each subtest.
-func TestLeaseStore(t *testing.T, mls MakeLeaseStore) {
+// TestStore tests a wgipam.Store type for compliance with the
+// interface. The MakeStore function is invoked to retrieve a new and empty
+// Store for each subtest.
+func TestStore(t *testing.T, ms MakeStore) {
 	t.Helper()
 
 	tests := []struct {
 		name string
-		fn   func(t *testing.T, ls wgipam.LeaseStore)
+		fn   func(t *testing.T, s wgipam.Store)
 	}{
 		{
 			name: "leases empty",
@@ -76,17 +76,17 @@ func TestLeaseStore(t *testing.T, mls MakeLeaseStore) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ls := mls(t)
-			defer ls.Close()
-			tt.fn(t, ls)
+			s := ms(t)
+			defer s.Close()
+			tt.fn(t, s)
 		})
 	}
 }
 
-func testLeasesEmpty(t *testing.T, ls wgipam.LeaseStore) {
+func testLeasesEmpty(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
-	leases, err := ls.Leases()
+	leases, err := s.Leases()
 	if err != nil {
 		t.Fatalf("failed to get leases: %v", err)
 	}
@@ -95,17 +95,17 @@ func testLeasesEmpty(t *testing.T, ls wgipam.LeaseStore) {
 	}
 }
 
-func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
+func testLeasesOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	// Save some synthetic leases to be fetched again later.
 	for i := 0; i < 3; i++ {
-		if err := ls.Save(uint64(i), okLease); err != nil {
+		if err := s.SaveLease(uint64(i), okLease); err != nil {
 			t.Fatalf("failed to save lease: %v", err)
 		}
 	}
 
-	got, err := ls.Leases()
+	got, err := s.Leases()
 	if err != nil {
 		t.Fatalf("failed to get leases: %v", err)
 	}
@@ -127,10 +127,10 @@ func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
 	}
 }
 
-func testLeaseNotExist(t *testing.T, ls wgipam.LeaseStore) {
+func testLeaseNotExist(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
-	l, ok, err := ls.Lease(1)
+	l, ok, err := s.Lease(1)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
@@ -142,15 +142,15 @@ func testLeaseNotExist(t *testing.T, ls wgipam.LeaseStore) {
 	}
 }
 
-func testSaveLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
+func testSaveLeaseOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	const key = 1
-	if err := ls.Save(key, okLease); err != nil {
+	if err := s.SaveLease(key, okLease); err != nil {
 		t.Fatalf("failed to save lease: %v", err)
 	}
 
-	l, ok, err := ls.Lease(key)
+	l, ok, err := s.Lease(key)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
@@ -163,22 +163,22 @@ func testSaveLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 	}
 }
 
-func testDeleteLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
+func testDeleteLeaseOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	const key = 1
-	if err := ls.Save(key, okLease); err != nil {
+	if err := s.SaveLease(key, okLease); err != nil {
 		t.Fatalf("failed to save lease: %v", err)
 	}
 
 	// Repeated deletions should be idempotent.
 	for i := 0; i < 3; i++ {
-		if err := ls.Delete(key); err != nil {
+		if err := s.DeleteLease(key); err != nil {
 			t.Fatalf("failed to delete lease: %v", err)
 		}
 	}
 
-	_, ok, err := ls.Lease(key)
+	_, ok, err := s.Lease(key)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
@@ -187,7 +187,7 @@ func testDeleteLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 	}
 }
 
-func testPurgeLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
+func testPurgeLeaseOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	// Leases start every 100 seconds and last 10 seconds.
@@ -198,7 +198,7 @@ func testPurgeLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 
 	var want []*wgipam.Lease
 	for i := 0; i < 3; i++ {
-		// Create leases which start at regular intervals.
+		// Create leases which start at regular intervas.
 		l := *okLease
 		l.Start = time.Unix((int64(i)+1)*start, 0)
 		l.Length = length * time.Second
@@ -208,7 +208,7 @@ func testPurgeLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 			want = []*wgipam.Lease{&l}
 		}
 
-		if err := ls.Save(uint64(i), &l); err != nil {
+		if err := s.SaveLease(uint64(i), &l); err != nil {
 			t.Fatalf("failed to save lease: %v", err)
 		}
 	}
@@ -219,13 +219,13 @@ func testPurgeLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 
 	// Repeated purges with the same time should be idempotent.
 	for i := 0; i < 3; i++ {
-		if err := ls.Purge(purge); err != nil {
+		if err := s.Purge(purge); err != nil {
 			t.Fatalf("failed to purge leases: %v", err)
 		}
 	}
 
 	// Expect only one lease to remain.
-	got, err := ls.Leases()
+	got, err := s.Leases()
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
