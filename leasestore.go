@@ -65,8 +65,8 @@ type leaseStore struct {
 	m  map[string]*Lease
 }
 
-// NewLeaseStore returns a LeaseStore which stores Leases in memory.
-func NewLeaseStore() LeaseStore {
+// MemoryLeaseStore returns a LeaseStore which stores Leases in memory.
+func MemoryLeaseStore() LeaseStore {
 	return &leaseStore{
 		m: make(map[string]*Lease),
 	}
