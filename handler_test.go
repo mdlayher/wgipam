@@ -52,12 +52,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "out of IPs",
 			h:    &wgipam.Handler{},
-			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
-				IPv6:      sub6,
-				LeaseTime: 10 * time.Second,
-			},
-			err: errOutOfIPs,
+			err:  errOutOfIPs,
 		},
 		{
 			name: "out of IPv4",
@@ -70,11 +65,6 @@ func TestHandlerRequestIP(t *testing.T) {
 
 				return h
 			}(),
-			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
-				IPv6:      sub6,
-				LeaseTime: 10 * time.Second,
-			},
 			err: errOutOfIPs,
 		},
 		{
@@ -88,7 +78,6 @@ func TestHandlerRequestIP(t *testing.T) {
 
 				return h
 			}(),
-			rip: ripDualStack,
 			err: errOutOfIPs,
 		},
 		{
@@ -184,6 +173,35 @@ func TestHandlerRequestIP(t *testing.T) {
 
 			if diff := cmp.Diff(tt.rip, rip); diff != "" {
 				t.Fatalf("unexpected RequestIP (-want +got):\n%s", diff)
+			}
+
+			// Ensure a lease was populated if leases are in use.
+			if tt.h.Leases == nil {
+				return
+			}
+
+			leases, err := tt.h.Leases.Leases()
+			if err != nil {
+				t.Fatalf("failed to get leases: %v", err)
+			}
+
+			// Synthesize an expected Lease out of the parameters returned by
+			// the server. The Address and Start fields are nil'd out for
+			// comparisons as we ultimately care mostly about the addresses
+			// assigned and the duration.
+			want := []*wgipam.Lease{{
+				IPv4:   rip.IPv4,
+				IPv6:   rip.IPv6,
+				Length: rip.LeaseTime,
+			}}
+
+			for i := range leases {
+				leases[i].Address = nil
+				leases[i].Start = time.Time{}
+			}
+
+			if diff := cmp.Diff(want, leases); diff != "" {
+				t.Fatalf("unexpected Leases (-want +got):\n%s", diff)
 			}
 		})
 	}

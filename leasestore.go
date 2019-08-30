@@ -31,6 +31,9 @@ type Lease struct {
 
 // A LeaseStore manages Leases.
 type LeaseStore interface {
+	// Leases returns all existing Leases.
+	Leases() (leases []*Lease, err error)
+
 	// Lease returns the Lease for source address src. It returns false if no
 	// Lease exists for src.
 	Lease(src net.Addr) (lease *Lease, ok bool, err error)
@@ -52,10 +55,23 @@ type leaseStore struct {
 	m  map[string]*Lease
 }
 
+// Leases implements LeaseStore.
+func (s *leaseStore) Leases() ([]*Lease, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ls := make([]*Lease, 0, len(s.m))
+	for _, l := range s.m {
+		ls = append(ls, l)
+	}
+
+	return ls, nil
+}
+
 // Lease implements LeaseStore.
 func (s *leaseStore) Lease(src net.Addr) (*Lease, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	l, ok := s.m[src.String()]
 	return l, ok, nil
@@ -63,8 +79,8 @@ func (s *leaseStore) Lease(src net.Addr) (*Lease, bool, error) {
 
 // Save implements LeaseStore.
 func (s *leaseStore) Save(l *Lease) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.m[l.Address.String()] = l
 	return nil
