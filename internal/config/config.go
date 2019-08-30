@@ -45,11 +45,11 @@ type file struct {
 
 // Config specifies the configuration for wgipamd.
 type Config struct {
-	Interfaces []InterfaceConfig
+	Interfaces []Interface
 }
 
-// An InterfaceConfig provides configuration for an individual interface.
-type InterfaceConfig struct {
+// An Interface provides configuration for an individual interface.
+type Interface struct {
 	Name    string
 	Subnets []*net.IPNet
 }
@@ -66,7 +66,7 @@ func Parse(r io.Reader) (*Config, error) {
 	// done when trying to create a listener. Instead, check for things
 	// like subnet validity.
 	c := &Config{
-		Interfaces: make([]InterfaceConfig, 0, len(f.Interfaces)),
+		Interfaces: make([]Interface, 0, len(f.Interfaces)),
 	}
 
 	for _, ifi := range f.Interfaces {
@@ -93,7 +93,7 @@ func Parse(r io.Reader) (*Config, error) {
 			return nil, handle(err)
 		}
 
-		c.Interfaces = append(c.Interfaces, InterfaceConfig{
+		c.Interfaces = append(c.Interfaces, Interface{
 			Name:    ifi.Name,
 			Subnets: subnets,
 		})

@@ -97,7 +97,7 @@ interfaces:
 			name: "OK default",
 			s:    config.Default,
 			c: &config.Config{
-				Interfaces: []config.InterfaceConfig{{
+				Interfaces: []config.Interface{{
 					Name: "wg0",
 					Subnets: []*net.IPNet{
 						mustCIDR("192.0.2.0/24"),
