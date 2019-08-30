@@ -57,7 +57,7 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 			return nil, err
 		}
 
-		h.logf(src, "allocated IP addresses: IPv4: %s, IPv6: %s", res.IPv4, res.IPv6)
+		h.logf(src, "leases not configured, allocating ephemeral IP addresses: IPv4: %s, IPv6: %s", res.IPv4, res.IPv6)
 		return res, nil
 	}
 
@@ -131,8 +131,6 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 		return nil, err
 	}
 
-	h.logf(src, "creating new IP address lease: IPv4: %s, IPv6: %s", res.IPv4, res.IPv6)
-
 	l := &Lease{
 		Address: src,
 		IPv4:    res.IPv4,
@@ -140,6 +138,8 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 		Start:   res.LeaseStart,
 		Length:  res.LeaseTime,
 	}
+
+	h.logf(src, "creating new IP address lease: %s", l)
 
 	if err := h.Leases.Save(l); err != nil {
 		return nil, err
@@ -152,10 +152,10 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, error) {
 	// We have a current lease, honor it and update its expiration time.
 	// TODO(mdlayher): lease expiration, parameterize expiration time.
-	h.logf(src, "renewing IP address lease: IPv4: %s, IPv6: %s", l.IPv4, l.IPv6)
-
 	l.Start = time.Now()
 	l.Length = 10 * time.Second
+
+	h.logf(src, "renewing IP address lease: %s", l)
 
 	if err := h.Leases.Save(l); err != nil {
 		return nil, err
