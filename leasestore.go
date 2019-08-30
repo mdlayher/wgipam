@@ -14,6 +14,7 @@
 package wgipam
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zeebo/xxh3"
 	"go.etcd.io/bbolt"
 )
 
@@ -29,11 +31,8 @@ var (
 	_ LeaseStore = &boltLeaseStore{}
 )
 
-// A Lease is a record of allocated IP addresses, assigned to a client by a Key
-// (typically a source address).
+// A Lease is a record of allocated IP addresses assigned to a client.
 type Lease struct {
-	Key string
-
 	IPv4, IPv6 *net.IPNet
 	Start      time.Time
 	Length     time.Duration
@@ -41,7 +40,6 @@ type Lease struct {
 
 // String returns a string suitable for logging.
 func (l *Lease) String() string {
-	// Address is handled in server logs, so omit it here.
 	return fmt.Sprintf("IPv4: %s, IPv6: %s, start: %s, end: %s",
 		l.IPv4, l.IPv6,
 		// time.Stamp seems to be reasonably readable.
@@ -75,28 +73,28 @@ type LeaseStore interface {
 
 	// Lease returns the Lease identified by key. It returns false if no
 	// Lease exists for key.
-	Lease(key string) (lease *Lease, ok bool, err error)
+	Lease(key uint64) (lease *Lease, ok bool, err error)
 
-	// Save creates or updates a Lease.
-	Save(lease *Lease) error
+	// Save creates or updates a Lease by key.
+	Save(key uint64, lease *Lease) error
 
-	// Delete deletes a Lease. Delete operations should be idempotent; that is,
-	// an error should only be returned if the delete operation fails.
+	// Delete deletes a Lease by key. Delete operations should be idempotent;
+	// that is, an error should only be returned if the delete operation fails.
 	// Attempting to delete an item that did not already exist should not
 	// return an error.
-	Delete(lease *Lease) error
+	Delete(key uint64) error
 }
 
 // A memoryLeaseStore is an in-memory LeaseStore implementation.
 type memoryLeaseStore struct {
 	mu sync.RWMutex
-	m  map[string]*Lease
+	m  map[uint64]*Lease
 }
 
 // MemoryLeaseStore returns a LeaseStore which stores Leases in memory.
 func MemoryLeaseStore() LeaseStore {
 	return &memoryLeaseStore{
-		m: make(map[string]*Lease),
+		m: make(map[uint64]*Lease),
 	}
 }
 
@@ -118,7 +116,7 @@ func (s *memoryLeaseStore) Leases() ([]*Lease, error) {
 }
 
 // Lease implements LeaseStore.
-func (s *memoryLeaseStore) Lease(key string) (*Lease, bool, error) {
+func (s *memoryLeaseStore) Lease(key uint64) (*Lease, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -127,20 +125,22 @@ func (s *memoryLeaseStore) Lease(key string) (*Lease, bool, error) {
 }
 
 // Save implements LeaseStore.
-func (s *memoryLeaseStore) Save(l *Lease) error {
+func (s *memoryLeaseStore) Save(key uint64, l *Lease) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.m[l.Key] = l
+	s.m[key] = l
 	return nil
 }
 
 // Delete implements LeaseStore.
-func (s *memoryLeaseStore) Delete(l *Lease) error {
+func (s *memoryLeaseStore) Delete(key uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.m, l.Key)
+	delete(s.m, key)
+	return nil
+}
 	return nil
 }
 
@@ -205,10 +205,10 @@ func (s *boltLeaseStore) Leases() ([]*Lease, error) {
 }
 
 // Lease implements LeaseStore.
-func (s *boltLeaseStore) Lease(key string) (*Lease, bool, error) {
+func (s *boltLeaseStore) Lease(key uint64) (*Lease, bool, error) {
 	var l *Lease
 	err := s.db.View(func(tx *bbolt.Tx) error {
-		v := tx.Bucket(bucketLeases).Get([]byte(key))
+		v := tx.Bucket(bucketLeases).Get(keyBytes(key))
 		if v == nil {
 			// No lease found, do not populate l.
 			return nil
@@ -231,20 +231,32 @@ func (s *boltLeaseStore) Lease(key string) (*Lease, bool, error) {
 }
 
 // Save implements LeaseStore.
-func (s *boltLeaseStore) Save(l *Lease) error {
+func (s *boltLeaseStore) Save(key uint64, l *Lease) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		lb, err := l.marshal()
 		if err != nil {
 			return err
 		}
 
-		return tx.Bucket(bucketLeases).Put([]byte(l.Key), lb)
+		return tx.Bucket(bucketLeases).Put(keyBytes(key), lb)
 	})
 }
 
 // Delete implements LeaseStore.
-func (s *boltLeaseStore) Delete(l *Lease) error {
+func (s *boltLeaseStore) Delete(key uint64) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return tx.Bucket(bucketLeases).Delete([]byte(l.Key))
+		return tx.Bucket(bucketLeases).Delete(keyBytes(key))
 	})
+}
+// strKey hashes s into a key.
+func strKey(s string) uint64 {
+	// Must be kept in sync with wgipam_test.strKey as well.
+	return xxh3.HashString(s)
+}
+
+// keyBytes converts k into a key for use with bolt.
+func keyBytes(k uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, k)
+	return b
 }

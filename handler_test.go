@@ -122,15 +122,13 @@ func TestHandlerRequestIP(t *testing.T) {
 				// allocation logic can kick in.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						Key: src.String(),
-
 						IPv4:   sub4,
 						IPv6:   sub6,
 						Start:  time.Now(),
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(l); err != nil {
+					if err := h.Leases.Save(strKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -149,8 +147,6 @@ func TestHandlerRequestIP(t *testing.T) {
 				// be ignored.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						Key: src.String(),
-
 						// Use an address that will not be allocated by our
 						// configuration and verify it is removed.
 						IPv4:   mustCIDR("192.0.2.255/32"),
@@ -158,7 +154,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(l); err != nil {
+					if err := h.Leases.Save(strKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -214,9 +210,9 @@ func TestHandlerRequestIP(t *testing.T) {
 			}
 
 			// Synthesize an expected Lease out of the parameters returned by
-			// the server. The Address and Start fields are nil'd out for
-			// comparisons as we ultimately care mostly about the addresses
-			// assigned and the duration.
+			// the server. The Start fields is nil'd out for comparisons as we
+			// ultimately care mostly about the addresses assigned and the
+			// duration.
 			want := []*wgipam.Lease{{
 				IPv4:   rip.IPv4,
 				IPv6:   rip.IPv6,
@@ -224,7 +220,6 @@ func TestHandlerRequestIP(t *testing.T) {
 			}}
 
 			for i := range leases {
-				leases[i].Key = ""
 				leases[i].Start = time.Time{}
 			}
 

@@ -62,7 +62,8 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	}
 
 	// Check for an existing lease.
-	l, ok, err := h.Leases.Lease(src.String())
+	key := strKey(src.String())
+	l, ok, err := h.Leases.Lease(key)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +83,7 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	// TODO(mdlayher): better error handling, Prometheus metrics, etc.
 	// Should failure to delete due to an item not existing actually be an
 	// error? It seems like it'll create more noise than necessary.
-	if err := h.Leases.Delete(l); err != nil {
+	if err := h.Leases.Delete(key); err != nil {
 		h.logf(src, "failed to delete lease %s: %v", l, err)
 	}
 	if err := free(h.IPv4, l.IPv4); err != nil {
@@ -152,7 +153,6 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 	}
 
 	l := &Lease{
-		Key:    src.String(),
 		IPv4:   res.IPv4,
 		IPv6:   res.IPv6,
 		Start:  res.LeaseStart,
@@ -161,7 +161,7 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 
 	h.logf(src, "creating new IP address lease: %s", l)
 
-	if err := h.Leases.Save(l); err != nil {
+	if err := h.Leases.Save(strKey(src.String()), l); err != nil {
 		return nil, err
 	}
 
@@ -177,7 +177,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 
 	h.logf(src, "renewing IP address lease: %s", l)
 
-	if err := h.Leases.Save(l); err != nil {
+	if err := h.Leases.Save(strKey(src.String()), l); err != nil {
 		return nil, err
 	}
 

@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net"
 	"sort"
-	"strconv"
 	"testing"
 	"time"
 
@@ -28,8 +27,6 @@ import (
 var (
 	// okLease is a lease which is fully populated and can be used in tests.
 	okLease = &wgipam.Lease{
-		Key: "fe80::1%wgtest0",
-
 		IPv4:   mustCIDR("192.0.2.0/32"),
 		IPv6:   mustCIDR("2001:db8::/128"),
 		Start:  time.Unix(1, 0),
@@ -97,14 +94,9 @@ func testLeasesEmpty(t *testing.T, ls wgipam.LeaseStore) {
 func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
 	t.Helper()
 
-	// Save some synthetic leases (with unique keys) to be fetched again later.
-	var want []*wgipam.Lease
+	// Save some synthetic leases to be fetched again later.
 	for i := 0; i < 3; i++ {
-		l := *okLease
-		l.Key = strconv.Itoa(i)
-		want = append(want, &l)
-
-		if err := ls.Save(&l); err != nil {
+		if err := ls.Save(uint64(i), okLease); err != nil {
 			t.Fatalf("failed to save lease: %v", err)
 		}
 	}
@@ -115,11 +107,15 @@ func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
 	}
 
 	// No ordering guarantees are made, so sort both slices for comparison.
-	sort.Slice(want, func(i, j int) bool {
-		return want[i].Key < want[j].Key
+	want := []*wgipam.Lease{
+		okLease, okLease, okLease,
+	}
+
+	sort.SliceStable(want, func(i, j int) bool {
+		return want[i].Start.Before(want[j].Start)
 	})
-	sort.Slice(got, func(i, j int) bool {
-		return got[i].Key < got[j].Key
+	sort.SliceStable(got, func(i, j int) bool {
+		return got[i].Start.Before(got[j].Start)
 	})
 
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -130,7 +126,7 @@ func testLeasesOK(t *testing.T, ls wgipam.LeaseStore) {
 func testLeaseNotExist(t *testing.T, ls wgipam.LeaseStore) {
 	t.Helper()
 
-	l, ok, err := ls.Lease("foo")
+	l, ok, err := ls.Lease(1)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
@@ -145,11 +141,12 @@ func testLeaseNotExist(t *testing.T, ls wgipam.LeaseStore) {
 func testSaveLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 	t.Helper()
 
-	if err := ls.Save(okLease); err != nil {
+	const key = 1
+	if err := ls.Save(key, okLease); err != nil {
 		t.Fatalf("failed to save lease: %v", err)
 	}
 
-	l, ok, err := ls.Lease(okLease.Key)
+	l, ok, err := ls.Lease(key)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}
@@ -165,18 +162,19 @@ func testSaveLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 func testDeleteLeaseOK(t *testing.T, ls wgipam.LeaseStore) {
 	t.Helper()
 
-	if err := ls.Save(okLease); err != nil {
+	const key = 1
+	if err := ls.Save(key, okLease); err != nil {
 		t.Fatalf("failed to save lease: %v", err)
 	}
 
 	// Repeated deletions should be idempotent.
 	for i := 0; i < 3; i++ {
-		if err := ls.Delete(okLease); err != nil {
+		if err := ls.Delete(key); err != nil {
 			t.Fatalf("failed to delete lease: %v", err)
 		}
 	}
 
-	_, ok, err := ls.Lease(okLease.Key)
+	_, ok, err := ls.Lease(key)
 	if err != nil {
 		t.Fatalf("failed to get lease: %v", err)
 	}

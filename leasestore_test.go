@@ -20,7 +20,14 @@ import (
 
 	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/wgipamtest"
+	"github.com/zeebo/xxh3"
 )
+
+// strKey hashes s into a key.
+func strKey(s string) uint64 {
+	// Must be kept in sync with wgipam.strKey as well.
+	return xxh3.HashString(s)
+}
 
 func TestLeaseStore(t *testing.T) {
 	// Set up a temporary directory for bolt database files which will also
