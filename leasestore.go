@@ -42,17 +42,19 @@ type LeaseStore interface {
 	Save(lease *Lease) error
 }
 
-// NewLeaseStore returns a LeaseStore which stores Leases in memory.
-func NewLeaseStore() LeaseStore {
-	return &leaseStore{
-		m: make(map[string]*Lease),
-	}
-}
+var _ LeaseStore = &leaseStore{}
 
 // A leaseStore is an in-memory LeaseStore implementation.
 type leaseStore struct {
 	mu sync.RWMutex
 	m  map[string]*Lease
+}
+
+// NewLeaseStore returns a LeaseStore which stores Leases in memory.
+func NewLeaseStore() LeaseStore {
+	return &leaseStore{
+		m: make(map[string]*Lease),
+	}
 }
 
 // Leases implements LeaseStore.
