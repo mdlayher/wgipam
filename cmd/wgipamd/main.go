@@ -22,11 +22,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/mdlayher/wgdynamic-go"
@@ -67,8 +69,26 @@ func main() {
 
 	log.Printf("starting with configuration file %q", f.Name())
 
-	// Serve on each specified interface and wait for each goroutine to exit.
+	// Use a context to handle cancelation on signal.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var eg errgroup.Group
+
+	eg.Go(func() error {
+		// Wait for signals (configurable per-platform) and then cancel the
+		// context to indicate that the process should shut down.
+		sigC := make(chan os.Signal, 1)
+		signal.Notify(sigC, signals()...)
+
+		s := <-sigC
+		log.Printf("received %s, shutting down", s)
+
+		cancel()
+		return nil
+	})
+
+	// Serve on each specified interface.
 	for _, ifi := range cfg.Interfaces {
 		ll := log.New(os.Stderr, ifi.Name+": ", log.LstdFlags)
 
@@ -104,8 +124,14 @@ func main() {
 			RequestIP: h.RequestIP,
 		}
 
+		// Serve requests until the context is canceled.
 		eg.Go(func() error {
-			return s.Serve(l)
+			<-ctx.Done()
+			return s.Close()
+		})
+
+		eg.Go(func() error {
+			return serve(s, l)
 		})
 	}
 
@@ -138,4 +164,23 @@ func subnetsString(subnets []*net.IPNet) string {
 	}
 
 	return strings.Join(ss, ", ")
+}
+
+// serve wraps s.Serve and handles certain errors as appropriate.
+func serve(s *wgdynamic.Server, l net.Listener) error {
+	if err := s.Serve(l); err != nil {
+		nerr, ok := err.(*net.OpError)
+		if !ok {
+			return err
+		}
+
+		// Unfortunately there isn't an easier way to check for this, but
+		// we want to ignore errors related to the connection closing, since
+		// s.Close is triggered on signal.
+		if nerr.Err.Error() != "use of closed network connection" {
+			return err
+		}
+	}
+
+	return nil
 }
