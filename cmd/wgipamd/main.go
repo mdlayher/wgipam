@@ -67,6 +67,12 @@ func main() {
 
 	log.Printf("starting with configuration file %q", f.Name())
 
+	// Configure lease storage based on the input configuration.
+	leases, err := newLeaseStore(cfg.Storage)
+	if err != nil {
+		log.Fatalf("failed to configure lease storage: %v", err)
+	}
+
 	// Serve on each specified interface and wait for each goroutine to exit.
 	var eg errgroup.Group
 	for _, ifi := range cfg.Interfaces {
@@ -86,11 +92,10 @@ func main() {
 		}
 
 		h := &wgipam.Handler{
-			Log:  ll,
-			IPv4: ip4s,
-			IPv6: ip6s,
-			// TODO(mdlayher): parameterize via config.
-			Leases: wgipam.NewLeaseStore(),
+			Log:    ll,
+			IPv4:   ip4s,
+			IPv6:   ip6s,
+			Leases: leases,
 		}
 
 		s := &wgdynamic.Server{
@@ -108,6 +113,17 @@ func main() {
 	}
 }
 
+// newLeaseStore configures a LeaseStore from storage configuration.
+func newLeaseStore(s config.Storage) (wgipam.LeaseStore, error) {
+	switch {
+	case s.Memory:
+		return wgipam.MemoryLeaseStore(), nil
+	default:
+		return nil, fmt.Errorf("invalid storage configuration: %#v", s)
+	}
+}
+
+// subnetsString turns subnets into a comma-separated string.
 func subnetsString(subnets []*net.IPNet) string {
 	var ss []string
 	for _, s := range subnets {
