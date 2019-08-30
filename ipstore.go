@@ -47,7 +47,7 @@ type ipStore struct {
 // DualStackIPStore returns an IPStore for each IPv4 and IPv6 address allocation.
 // It is a convenience wrapper around NewIPStore that automatically allocates
 // the input subnets into the appropriate IPStore.
-func DualStackIPStore(subnets []*net.IPNet) (ip4s IPStore, ip6s IPStore, err error) {
+func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
 		return nil, nil, errors.New("wgipam: DualStackIPStore must have one or more subnets to serve")
