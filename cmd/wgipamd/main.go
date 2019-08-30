@@ -121,6 +121,10 @@ func newLeaseStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.LeaseSt
 	case s.Memory:
 		ll.Println("using ephemeral in-memory storage for leases")
 		return wgipam.MemoryLeaseStore(), nil
+	case s.File != "":
+		file := fmt.Sprintf("%s-%s", ifi, s.File)
+		ll.Printf("using file %q for leases", file)
+		return wgipam.FileLeaseStore(file)
 	default:
 		return nil, fmt.Errorf("invalid storage configuration: %#v", s)
 	}
