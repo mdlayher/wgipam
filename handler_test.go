@@ -139,6 +139,34 @@ func TestHandlerRequestIP(t *testing.T) {
 			}(),
 			rip: ripDualStack,
 		},
+		{
+			name: "OK dual stack with expired lease",
+			h: func() *wgipam.Handler {
+				h := mustHandler([]*net.IPNet{sub4, sub6})
+
+				// Leases in use and one will be populated immediately when the
+				// request is received. However, the lease is expired and should
+				// be ignored.
+				h.NewRequest = func(src net.Addr) {
+					l := &wgipam.Lease{
+						Address: src,
+
+						// Use an address that will not be allocated by our
+						// configuration and verify it is removed.
+						IPv4:   mustCIDR("192.0.2.255/32"),
+						Start:  time.Unix(1, 0),
+						Length: 10 * time.Second,
+					}
+
+					if err := h.Leases.Save(l); err != nil {
+						t.Fatalf("failed to create initial lease: %v", err)
+					}
+				}
+
+				return h
+			}(),
+			rip: ripDualStack,
+		},
 	}
 
 	for _, tt := range tests {

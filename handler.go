@@ -66,12 +66,32 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	if err != nil {
 		return nil, err
 	}
-	if ok {
-		// Existing lease, renew it.
+	if !ok {
+		// No lease, create a new lease.
+		return h.newLease(src, req)
+	}
+
+	if time.Since(l.Start.Add(l.Length)) < 0 {
+		// Lease has not expired, renew it.
 		return h.renewLease(src, l)
 	}
 
-	// No lease, create a new lease.
+	// Clean up data related to the existing lease and create a new one.
+	h.logf(src, "deleting expired lease and freeing IP addresses: %s", l)
+
+	// TODO(mdlayher): better error handling, Prometheus metrics, etc.
+	// Should failure to delete due to an item not existing actually be an
+	// error? It seems like it'll create more noise than necessary.
+	if err := h.Leases.Delete(l); err != nil {
+		h.logf(src, "failed to delete lease %s: %v", l, err)
+	}
+	if err := free(h.IPv4, l.IPv4); err != nil {
+		h.logf(src, "failed to free IPv4 address %s: %v", l.IPv4, err)
+	}
+	if err := free(h.IPv6, l.IPv6); err != nil {
+		h.logf(src, "failed to free IPv6 address %s: %v", l.IPv6, err)
+	}
+
 	return h.newLease(src, req)
 }
 
@@ -98,15 +118,15 @@ func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.Req
 		// We must also free the address of the other pool in case just one of
 		// the address family pools was empty.
 		if ip4 != nil {
-			if err := h.IPv4.Free(ip4); err != nil {
+			if err := free(h.IPv4, ip4); err != nil {
 				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-				h.logf(src, "failed to free temporarily allocated IPv4 address: %s", ip4)
+				h.logf(src, "failed to free temporarily allocated IPv4 address %s: %v", ip4, err)
 			}
 		}
 		if ip6 != nil {
-			if err := h.IPv6.Free(ip6); err != nil {
+			if err := free(h.IPv6, ip6); err != nil {
 				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-				h.logf(src, "failed to free temporarily allocated IPv6 address: %s", ip6)
+				h.logf(src, "failed to free temporarily allocated IPv6 address %s: %v", ip6, err)
 			}
 		}
 
@@ -177,6 +197,16 @@ func allocate(ips IPStore) (*net.IPNet, bool, error) {
 	}
 
 	return ips.Allocate()
+}
+
+// free frees an IP addresses in ips. If ips is nil, it returns early.
+func free(ips IPStore, ip *net.IPNet) error {
+	if ips == nil {
+		// Shortcut to make calling code more concise.
+		return nil
+	}
+
+	return ips.Free(ip)
 }
 
 // logf logs a formatted message about src, if h.Log is configured.

@@ -52,6 +52,9 @@ type LeaseStore interface {
 
 	// Save creates or updates a Lease.
 	Save(lease *Lease) error
+
+	// Delete deletes a Lease.
+	Delete(lease *Lease) error
 }
 
 var _ LeaseStore = &leaseStore{}
@@ -97,5 +100,20 @@ func (s *leaseStore) Save(l *Lease) error {
 	defer s.mu.Unlock()
 
 	s.m[l.Address.String()] = l
+	return nil
+}
+
+// Delete implements LeaseStore.
+func (s *leaseStore) Delete(l *Lease) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Verify the lease was actually allocated.
+	str := l.Address.String()
+	if _, ok := s.m[str]; !ok {
+		return fmt.Errorf("wgipam: no lease for client %q", str)
+	}
+
+	delete(s.m, str)
 	return nil
 }
