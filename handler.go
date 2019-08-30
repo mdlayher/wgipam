@@ -140,7 +140,7 @@ func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.Req
 	return &wgdynamic.RequestIP{
 		IPv4:       ip4,
 		IPv6:       ip6,
-		LeaseStart: time.Now(),
+		LeaseStart: timeNow(),
 		LeaseTime:  10 * time.Second,
 	}, nil
 }
@@ -172,7 +172,7 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, error) {
 	// We have a current lease, honor it and update its expiration time.
 	// TODO(mdlayher): lease expiration, parameterize expiration time.
-	l.Start = time.Now()
+	l.Start = timeNow()
 	l.Length = 10 * time.Second
 
 	h.logf(src, "renewing IP address lease: %s", l)

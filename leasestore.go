@@ -307,6 +307,13 @@ func (s *boltLeaseStore) Purge(t time.Time) error {
 	})
 }
 
+// timeNow returns the current time with a 1 second granularity.
+func timeNow() time.Time {
+	// There's no point in using extremely high resolution time in this service,
+	// so round everything to the nearest second.
+	return time.Unix(int64(time.Now().Unix()), 0)
+}
+
 // strKey hashes s into a key.
 func strKey(s string) uint64 {
 	// Must be kept in sync with wgipam_test.strKey as well.

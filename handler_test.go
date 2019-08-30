@@ -124,11 +124,11 @@ func TestHandlerRequestIP(t *testing.T) {
 					l := &wgipam.Lease{
 						IPv4:   sub4,
 						IPv6:   sub6,
-						Start:  time.Now(),
+						Start:  wgipam.TimeNow(),
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(strKey(src.String()), l); err != nil {
+					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -154,7 +154,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(strKey(src.String()), l); err != nil {
+					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
