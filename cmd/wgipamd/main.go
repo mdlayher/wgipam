@@ -30,6 +30,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/mdlayher/wgdynamic-go"
 	"github.com/mdlayher/wgipam"
@@ -132,6 +133,21 @@ func main() {
 
 		eg.Go(func() error {
 			return serve(s, l)
+		})
+
+		// Purge expired leases at regular intervals.
+		eg.Go(func() error {
+			tick := time.NewTicker(10 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case t := <-tick.C:
+					if err := leases.Purge(t); err != nil {
+						ll.Printf("failed to purge leases: %v", err)
+					}
+				}
+			}
 		})
 	}
 
