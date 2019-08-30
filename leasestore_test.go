@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/mdlayher/wgipam"
-	"github.com/mdlayher/wgipam/internal/wgipamtest"
+	"github.com/mdlayher/wgipam/wgipamtest"
 )
 
 func TestLeaseStore(t *testing.T) {
