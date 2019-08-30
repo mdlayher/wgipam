@@ -24,6 +24,11 @@ import (
 )
 
 func TestParse(t *testing.T) {
+	okInterfaces := []config.Interface{{
+		Name:    "wg0",
+		Subnets: []*net.IPNet{mustCIDR("192.0.2.0/24")},
+	}}
+
 	tests := []struct {
 		name string
 		s    string
@@ -33,6 +38,13 @@ func TestParse(t *testing.T) {
 		{
 			name: "bad YAML",
 			s:    "xxx",
+		},
+		{
+			name: "bad no interfaces",
+			s: `
+---
+interfaces:
+`,
 		},
 		{
 			name: "bad interface",
@@ -94,9 +106,66 @@ interfaces:
 `,
 		},
 		{
+			name: "OK default storage no header",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - "192.0.2.0/24"
+`,
+			c: &config.Config{
+				Storage: config.Storage{
+					Memory: true,
+				},
+				Interfaces: okInterfaces,
+			},
+			ok: true,
+		},
+		{
+			name: "OK default storage with header",
+			s: `
+---
+storage:
+interfaces:
+- name: "wg0"
+  subnets:
+  - "192.0.2.0/24"
+`,
+			c: &config.Config{
+				Storage: config.Storage{
+					Memory: true,
+				},
+				Interfaces: okInterfaces,
+			},
+			ok: true,
+		},
+		{
+			name: "OK default storage with empty items",
+			s: `
+---
+storage:
+  file: ""
+interfaces:
+- name: "wg0"
+  subnets:
+  - "192.0.2.0/24"
+`,
+			c: &config.Config{
+				Storage: config.Storage{
+					Memory: true,
+				},
+				Interfaces: okInterfaces,
+			},
+			ok: true,
+		},
+		{
 			name: "OK default",
 			s:    config.Default,
 			c: &config.Config{
+				Storage: config.Storage{
+					File: "wgipamd.db",
+				},
 				Interfaces: []config.Interface{{
 					Name: "wg0",
 					Subnets: []*net.IPNet{

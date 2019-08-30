@@ -26,7 +26,13 @@ import (
 
 // Default is the YAML representation of the default configuration.
 const Default = `---
-# Specify WireGuard interfaces to listen on for IP assignment requests.
+# The storage backend for IP address allocations and leases.
+#
+# If none specified, ephemeral in-memory storage will be used.
+storage:
+  file: "wgipamd.db"
+# Specify one or more WireGuard interfaces to listen on for IP
+# assignment requests.
 interfaces:
 - name: "wg0"
   # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.
@@ -37,15 +43,27 @@ interfaces:
 
 // A file is the raw top-level configuration file representation.
 type file struct {
+	Storage    storage `yaml:"storage"`
 	Interfaces []struct {
 		Name    string   `yaml:"name"`
 		Subnets []string `yaml:"subnets"`
 	} `yaml:"interfaces"`
 }
 
+type storage struct {
+	File string `yaml:"file"`
+}
+
 // Config specifies the configuration for wgipamd.
 type Config struct {
+	Storage    Storage
 	Interfaces []Interface
+}
+
+// Storage provides configuration for storage backends.
+type Storage struct {
+	Memory bool
+	File   string
 }
 
 // An Interface provides configuration for an individual interface.
@@ -62,13 +80,24 @@ func Parse(r io.Reader) (*Config, error) {
 		return nil, err
 	}
 
-	// Don't bother to check for valid interface names; that is more easily
-	// done when trying to create a listener. Instead, check for things
-	// like subnet validity.
+	// Must configure at least one interface.
+	if len(f.Interfaces) == 0 {
+		return nil, errors.New("no configured interfaces")
+	}
+
 	c := &Config{
 		Interfaces: make([]Interface, 0, len(f.Interfaces)),
 	}
 
+	s, err := parseStorage(f.Storage)
+	if err != nil {
+		return nil, err
+	}
+	c.Storage = *s
+
+	// Don't bother to check for valid interface names; that is more easily
+	// done when trying to create a listener. Instead, check for things
+	// like subnet validity.
 	for _, ifi := range f.Interfaces {
 		if ifi.Name == "" {
 			return nil, errors.New("empty interface name")
@@ -105,6 +134,15 @@ func Parse(r io.Reader) (*Config, error) {
 // WriteDefault writes out the Default configuration to path.
 func WriteDefault(path string) error {
 	return ioutil.WriteFile(path, []byte(Default), 0644)
+}
+
+// parseStorage parses a raw storage configuration into a Storage structure.
+func parseStorage(s storage) (*Storage, error) {
+	if s.File == "" {
+		return &Storage{Memory: true}, nil
+	}
+
+	return &Storage{File: s.File}, nil
 }
 
 // parseCIDR parses s as a *net.IPNet and verifies it refers to a subnet.
