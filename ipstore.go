@@ -15,11 +15,14 @@ package wgipam
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 
 	"github.com/mikioh/ipaddr"
+)
+
+var (
+	_ IPStore = &memoryIPStore{}
 )
 
 // An IPStore can allocate IP addresses. IPStore implementations should be
@@ -30,14 +33,15 @@ type IPStore interface {
 	// if no more IP addresses are available.
 	Allocate() (ip *net.IPNet, ok bool, err error)
 
-	// Free returns an allocated IP address to the IPStore.
+	// Free returns an allocated IP address to the IPStore. Free operations
+	// should be idempotent; that is, an error should only be returned if the
+	// free operation fails. Attempting to free an IP that did not already exist
+	// should not return an error.
 	Free(ip *net.IPNet) error
 }
 
-var _ IPStore = &ipStore{}
-
-// An ipStore is an in-memory IPStore implementation.
-type ipStore struct {
+// A memoryIPStore is an in-memory IPStore implementation.
+type memoryIPStore struct {
 	mu  sync.Mutex
 	m   map[*net.IPNet]struct{}
 	c   *ipaddr.Cursor
@@ -64,7 +68,7 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	}
 
 	if len(sub4) > 0 {
-		ips, err := NewIPStore(sub4)
+		ips, err := MemoryIPStore(sub4)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -72,7 +76,7 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	}
 
 	if len(sub6) > 0 {
-		ips, err := NewIPStore(sub6)
+		ips, err := MemoryIPStore(sub6)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -82,10 +86,10 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	return ip4s, ip6s, nil
 }
 
-// NewIPStore returns an IPStore which allocates IP addresses from memory. The
+// MemoryIPStore returns an IPStore which allocates IP addresses from memory. The
 // specified subnets must use a single IP address family: either IPv4 or IPv6
 // exclusively.
-func NewIPStore(subnets []*net.IPNet) (IPStore, error) {
+func MemoryIPStore(subnets []*net.IPNet) (IPStore, error) {
 	if len(subnets) == 0 {
 		return nil, errors.New("wgipam: NewIPStore requires one or more subnets")
 	}
@@ -105,14 +109,14 @@ func NewIPStore(subnets []*net.IPNet) (IPStore, error) {
 		ps = append(ps, *ipaddr.NewPrefix(s))
 	}
 
-	return &ipStore{
+	return &memoryIPStore{
 		m: make(map[*net.IPNet]struct{}),
 		c: ipaddr.NewCursor(ps),
 	}, nil
 }
 
 // Allocate implements IPStore.
-func (s *ipStore) Allocate() (*net.IPNet, bool, error) {
+func (s *memoryIPStore) Allocate() (*net.IPNet, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -138,14 +142,9 @@ func (s *ipStore) Allocate() (*net.IPNet, bool, error) {
 }
 
 // Free implements IPStore.
-func (s *ipStore) Free(ip *net.IPNet) error {
+func (s *memoryIPStore) Free(ip *net.IPNet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// Verify the address was actually allocated.
-	if _, ok := s.m[ip]; !ok {
-		return fmt.Errorf("wgipam: IP address %q was not allocated", ip)
-	}
 
 	delete(s.m, ip)
 	return nil

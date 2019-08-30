@@ -159,7 +159,7 @@ func TestIPStoreAllocate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ips, err := wgipam.NewIPStore(tt.subnets)
+			ips, err := wgipam.MemoryIPStore(tt.subnets)
 			if tt.ok && err != nil {
 				t.Fatalf("failed to create IPStore: %v", err)
 			}
@@ -222,6 +222,7 @@ func TestIPStoreFree(t *testing.T) {
 				// Allocate a random address outside of sub4.
 				return mustCIDR("192.0.2.1/32")
 			},
+			ok: true,
 		},
 		{
 			name:    "allocated",
@@ -244,7 +245,7 @@ func TestIPStoreFree(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ips, err := wgipam.NewIPStore(tt.subnets)
+			ips, err := wgipam.MemoryIPStore(tt.subnets)
 			if err != nil {
 				t.Fatalf("failed to create IPStore: %v", err)
 			}
