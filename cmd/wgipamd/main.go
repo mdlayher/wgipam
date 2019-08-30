@@ -67,16 +67,17 @@ func main() {
 
 	log.Printf("starting with configuration file %q", f.Name())
 
-	// Configure lease storage based on the input configuration.
-	leases, err := newLeaseStore(cfg.Storage)
-	if err != nil {
-		log.Fatalf("failed to configure lease storage: %v", err)
-	}
-
 	// Serve on each specified interface and wait for each goroutine to exit.
 	var eg errgroup.Group
 	for _, ifi := range cfg.Interfaces {
 		ll := log.New(os.Stderr, ifi.Name+": ", log.LstdFlags)
+
+		// Configure lease storage based on the input configuration.
+		leases, err := newLeaseStore(ifi.Name, cfg.Storage, ll)
+		if err != nil {
+			ll.Fatalf("failed to configure lease storage: %v", err)
+		}
+		defer leases.Close()
 
 		l, err := wgdynamic.Listen(ifi.Name)
 		if err != nil {
@@ -113,10 +114,12 @@ func main() {
 	}
 }
 
-// newLeaseStore configures a LeaseStore from storage configuration.
-func newLeaseStore(s config.Storage) (wgipam.LeaseStore, error) {
+// newLeaseStore configures a LeaseStore for the specified interface from
+// storage configuration.
+func newLeaseStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.LeaseStore, error) {
 	switch {
 	case s.Memory:
+		ll.Println("using ephemeral in-memory storage for leases")
 		return wgipam.MemoryLeaseStore(), nil
 	default:
 		return nil, fmt.Errorf("invalid storage configuration: %#v", s)
