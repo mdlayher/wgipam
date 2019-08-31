@@ -39,6 +39,14 @@ interfaces:
   subnets:
   - "192.0.2.0/24"
   - "2001:db8::/64"
+# Enable or disable the debug HTTP server for facilities such as Prometheus
+# metrics and pprof support.
+#
+# Warning: do not expose pprof on an untrusted network!
+debug:
+  address: "localhost:9475"
+  prometheus: true
+  pprof: false
 `
 
 // A file is the raw top-level configuration file representation.
@@ -48,16 +56,14 @@ type file struct {
 		Name    string   `yaml:"name"`
 		Subnets []string `yaml:"subnets"`
 	} `yaml:"interfaces"`
-}
-
-type storage struct {
-	File string `yaml:"file"`
+	Debug Debug `yaml:"debug"`
 }
 
 // Config specifies the configuration for wgipamd.
 type Config struct {
 	Storage    Storage
 	Interfaces []Interface
+	Debug      Debug
 }
 
 // Storage provides configuration for storage backends.
@@ -66,10 +72,22 @@ type Storage struct {
 	File   string
 }
 
+// storage is the raw YAML structure for storage configuration.
+type storage struct {
+	File string `yaml:"file"`
+}
+
 // An Interface provides configuration for an individual interface.
 type Interface struct {
 	Name    string
 	Subnets []*net.IPNet
+}
+
+// Debug provides configuration for debugging and observability.
+type Debug struct {
+	Address    string `yaml:"address"`
+	Prometheus bool   `yaml:"prometheus"`
+	PProf      bool   `yaml:"pprof"`
 }
 
 // Parse parses a Config in YAML format from an io.Reader and verifies that
@@ -87,6 +105,14 @@ func Parse(r io.Reader) (*Config, error) {
 
 	c := &Config{
 		Interfaces: make([]Interface, 0, len(f.Interfaces)),
+	}
+
+	// Validate debug configuration if set.
+	if f.Debug.Address != "" {
+		if _, err := net.ResolveTCPAddr("tcp", f.Debug.Address); err != nil {
+			return nil, fmt.Errorf("bad debug address: %v", err)
+		}
+		c.Debug = f.Debug
 	}
 
 	s, err := parseStorage(f.Storage)

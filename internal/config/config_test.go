@@ -55,6 +55,16 @@ interfaces:
 `,
 		},
 		{
+			name: "bad debug address",
+			s: `
+---
+interfaces:
+- name: "wg0"
+debug:
+  address: "xxx"
+`,
+		},
+		{
 			name: "bad CIDR",
 			s: `
 ---
@@ -173,6 +183,11 @@ interfaces:
 						mustCIDR("2001:db8::/64"),
 					},
 				}},
+				Debug: config.Debug{
+					Address:    "localhost:9475",
+					Prometheus: true,
+					PProf:      false,
+				},
 			},
 			ok: true,
 		},
