@@ -29,11 +29,11 @@ type Handler struct {
 
 	// IPv4 and IPv6 specify IPStores for IPv4 and IPv6 addresses, respectively.
 	// If either are nil, addresses will not be allocated for that family.
-	IPv4, IPv6 IPStore
+	IPv4, IPv6 IPAllocator
 
-	// Leases specifies a LeaseStore for Lease storage. If nil, Leases are not
+	// Leases specifies a Store for Lease storage. If nil, Leases are not
 	// used, and all incoming requests will allocate new IP addresses.
-	Leases LeaseStore
+	Leases Store
 
 	// TODO(mdlayher): perhaps generalize NewRequest like net/http.ConnState?
 
@@ -83,7 +83,7 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	// TODO(mdlayher): better error handling, Prometheus metrics, etc.
 	// Should failure to delete due to an item not existing actually be an
 	// error? It seems like it'll create more noise than necessary.
-	if err := h.Leases.Delete(key); err != nil {
+	if err := h.Leases.DeleteLease(key); err != nil {
 		h.logf(src, "failed to delete lease %s: %v", l, err)
 	}
 	if err := free(h.IPv4, l.IPv4); err != nil {
@@ -161,7 +161,7 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 
 	h.logf(src, "creating new IP address lease: %s", l)
 
-	if err := h.Leases.Save(strKey(src.String()), l); err != nil {
+	if err := h.Leases.SaveLease(strKey(src.String()), l); err != nil {
 		return nil, err
 	}
 
@@ -177,7 +177,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 
 	h.logf(src, "renewing IP address lease: %s", l)
 
-	if err := h.Leases.Save(strKey(src.String()), l); err != nil {
+	if err := h.Leases.SaveLease(strKey(src.String()), l); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +190,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 }
 
 // allocate allocates IP addresses from ips. If ips is nil, it returns early.
-func allocate(ips IPStore) (*net.IPNet, bool, error) {
+func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
 	if ips == nil {
 		// Shortcut to make calling code more concise.
 		return nil, false, nil
@@ -200,7 +200,7 @@ func allocate(ips IPStore) (*net.IPNet, bool, error) {
 }
 
 // free frees an IP addresses in ips. If ips is nil, it returns early.
-func free(ips IPStore, ip *net.IPNet) error {
+func free(ips IPAllocator, ip *net.IPNet) error {
 	if ips == nil {
 		// Shortcut to make calling code more concise.
 		return nil

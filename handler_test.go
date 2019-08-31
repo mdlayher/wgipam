@@ -128,7 +128,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
+					if err := h.Leases.SaveLease(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -154,7 +154,7 @@ func TestHandlerRequestIP(t *testing.T) {
 						Length: 10 * time.Second,
 					}
 
-					if err := h.Leases.Save(wgipam.StrKey(src.String()), l); err != nil {
+					if err := h.Leases.SaveLease(wgipam.StrKey(src.String()), l); err != nil {
 						t.Fatalf("failed to create initial lease: %v", err)
 					}
 				}
@@ -231,16 +231,18 @@ func TestHandlerRequestIP(t *testing.T) {
 }
 
 func mustHandler(subnets []*net.IPNet) *wgipam.Handler {
-	ip4s, ip6s, err := wgipam.DualStackIPStore(subnets)
+	store := wgipam.MemoryStore()
+
+	ip4s, ip6s, err := wgipam.DualStackIPAllocator(store, subnets)
 	if err != nil {
-		panicf("failed to create IP stores: %v", err)
+		panicf("failed to create IPAllocators: %v", err)
 	}
 
 	return &wgipam.Handler{
 		IPv4: ip4s,
 		IPv6: ip6s,
 		// Leases are always ephemeral in this test handler.
-		Leases: wgipam.MemoryLeaseStore(),
+		Leases: store,
 	}
 }
 
