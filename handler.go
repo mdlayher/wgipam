@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/mdlayher/wgdynamic-go"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // A Handler handles IP allocation requests using the wg-dynamic protocol.
@@ -34,6 +35,10 @@ type Handler struct {
 	// Leases specifies a Store for Lease storage. If nil, Leases are not
 	// used, and all incoming requests will allocate new IP addresses.
 	Leases Store
+
+	// Metrics specifies Prometheus metrics for the Handler. If nil, metrics
+	// are not collected.
+	Metrics *HandlerMetrics
 
 	// TODO(mdlayher): perhaps generalize NewRequest like net/http.ConnState?
 
@@ -50,6 +55,30 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 		h.NewRequest(src)
 	}
 
+	res, err := h.requestIP(src, req)
+	if err != nil {
+		h.metrics(func() {
+			h.Metrics.RequestsTotal.WithLabelValues("request_ip", "error").Inc()
+
+			// Note the type of error that occurs, if a protocol error is
+			// sent back to the client.
+			typ := "unknown"
+			if werr, ok := err.(*wgdynamic.Error); ok {
+				typ = werr.Message
+			}
+
+			h.Metrics.ErrorsTotal.WithLabelValues("request_ip", typ).Inc()
+		})
+		return nil, err
+	}
+
+	h.metrics(func() {
+		h.Metrics.RequestsTotal.WithLabelValues("request_ip", "ok").Inc()
+	})
+	return res, nil
+}
+
+func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
 	if h.Leases == nil {
 		// Lease store is not configured, always allocate new addresses.
 		res, err := h.allocate(src, req)
@@ -189,6 +218,46 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 	}, nil
 }
 
+// HandlerMetrics contains metrics related to Handler operations.
+type HandlerMetrics struct {
+	RequestsTotal *prometheus.CounterVec
+	ErrorsTotal   *prometheus.CounterVec
+}
+
+// NewHandlerMetrics produces a HandlerMetrics structure which registers its
+// metrics with reg and adds an interface label ifi.
+func NewHandlerMetrics(reg *prometheus.Registry, ifi string) *HandlerMetrics {
+	const (
+		namespace = "wgipamd"
+		subsystem = "server"
+	)
+
+	labels := prometheus.Labels{
+		"interface": ifi,
+	}
+
+	hm := &HandlerMetrics{
+		RequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "requests_total",
+			Help:      "The total number of requests from clients using the wg-dynamic protocol.",
+		}, []string{"interface", "operation", "status"}).MustCurryWith(labels),
+
+		ErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "errors_total",
+			Help:      "Any errors returned to clients using the wg-dynamic protocol.",
+		}, []string{"interface", "operation", "type"}).MustCurryWith(labels),
+	}
+
+	reg.MustRegister(hm.RequestsTotal)
+	reg.MustRegister(hm.ErrorsTotal)
+
+	return hm
+}
+
 // allocate allocates IP addresses from ips. If ips is nil, it returns early.
 func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
 	if ips == nil {
@@ -224,4 +293,13 @@ func (h *Handler) logf(src net.Addr, format string, v ...interface{}) {
 
 	// Port and zone aren't necessary.
 	h.Log.Printf("%s: %s", ta.IP, fmt.Sprintf(format, v...))
+}
+
+// metrics invokes fn if h.Metrics is configured.
+func (h *Handler) metrics(fn func()) {
+	if h.Metrics == nil {
+		return
+	}
+
+	fn()
 }

@@ -160,10 +160,11 @@ func main() {
 		}
 
 		h := &wgipam.Handler{
-			Log:    ll,
-			IPv4:   ip4s,
-			IPv6:   ip6s,
-			Leases: store,
+			Log:     ll,
+			IPv4:    ip4s,
+			IPv6:    ip6s,
+			Leases:  store,
+			Metrics: wgipam.NewHandlerMetrics(reg, ifi.Name),
 		}
 
 		s := &wgdynamic.Server{
