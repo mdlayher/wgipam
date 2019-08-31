@@ -1,2 +1,3 @@
 cmd/wgipamd/wgipamd
 cmd/wgipamd/wgipamd.yaml
+*.db
