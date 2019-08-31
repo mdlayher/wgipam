@@ -150,6 +150,8 @@ func (s *memoryStore) Purge(t time.Time) error {
 		}
 	}
 
+	// TODO(mdlayher): also purge any IP allocations for expired leases.
+
 	return nil
 }
 
