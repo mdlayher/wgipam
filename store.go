@@ -184,7 +184,11 @@ func (s *memoryStore) SaveSubnet(sub *net.IPNet) error {
 }
 
 // AllocateIP implements Store.
-func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) (err error) {
+func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) error {
+	if err := checkSubnetContains(sub, ip); err != nil {
+		return err
+	}
+
 	s.subnetsMu.Lock()
 	defer s.subnetsMu.Unlock()
 
@@ -202,6 +206,10 @@ func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) (err error) {
 
 // FreeIP implements Store.
 func (s *memoryStore) FreeIP(sub, ip *net.IPNet) error {
+	if err := checkSubnetContains(sub, ip); err != nil {
+		return err
+	}
+
 	s.subnetsMu.Lock()
 	defer s.subnetsMu.Unlock()
 
@@ -216,7 +224,8 @@ func (s *memoryStore) FreeIP(sub, ip *net.IPNet) error {
 
 // Bolt database bucket names.
 var (
-	bucketLeases = []byte("leases")
+	bucketLeases  = []byte("leases")
+	bucketSubnets = []byte("subnets")
 )
 
 // A leaseStore is an in-memory Store implementation.
@@ -236,8 +245,14 @@ func FileStore(file string) (Store, error) {
 	}
 
 	err = db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(bucketLeases)
-		return err
+		// Create all required buckets.
+		for _, b := range [][]byte{bucketLeases, bucketSubnets} {
+			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -257,7 +272,7 @@ func (s *boltStore) Leases() ([]*Lease, error) {
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		// Unmarshal each Lease from its bucket.
-		return tx.Bucket(bucketLeases).ForEach(func(_ []byte, v []byte) error {
+		return tx.Bucket(bucketLeases).ForEach(func(_, v []byte) error {
 			var l Lease
 			if err := l.unmarshal(v); err != nil {
 				return err
@@ -326,7 +341,7 @@ func (s *boltStore) Purge(t time.Time) error {
 		var keys [][]byte
 
 		b := tx.Bucket(bucketLeases)
-		err := b.ForEach(func(k []byte, v []byte) error {
+		err := b.ForEach(func(k, v []byte) error {
 			var l Lease
 			if err := l.unmarshal(v); err != nil {
 				return err
@@ -353,16 +368,74 @@ func (s *boltStore) Purge(t time.Time) error {
 }
 
 // Subnets implements Store.
-func (s *boltStore) Subnets() ([]*net.IPNet, error) { return nil, nil }
+func (s *boltStore) Subnets() ([]*net.IPNet, error) {
+	var subnets []*net.IPNet
+
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		// Unmarshal each subnet from its bucket.
+		return tx.Bucket(bucketSubnets).ForEach(func(k, _ []byte) error {
+			sub, err := unmarshalIPNet(k)
+			if err != nil {
+				return err
+			}
+
+			subnets = append(subnets, sub)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return subnets, nil
+}
 
 // SaveSubnet implements Store.
-func (s *boltStore) SaveSubnet(sub *net.IPNet) error { return nil }
+func (s *boltStore) SaveSubnet(sub *net.IPNet) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.Bucket(bucketSubnets).CreateBucketIfNotExists(marshalIPNet(sub))
+		return err
+	})
+}
 
 // SaveSubnet implements Store.
-func (s *boltStore) AllocateIP(sub, ip *net.IPNet) error { return nil }
+func (s *boltStore) AllocateIP(sub, ip *net.IPNet) error {
+	if err := checkSubnetContains(sub, ip); err != nil {
+		return err
+	}
+
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketSubnets).Bucket(marshalIPNet(sub))
+		if b == nil {
+			return fmt.Errorf("wgipam: no such subnet %q", sub)
+		}
+
+		k := marshalIPNet(ip)
+		if b.Get(k) != nil {
+			return fmt.Errorf("wgipam: subnet %q address %q is already allocated", sub, ip)
+		}
+
+		// For now we don't store any data, we just ensure a key exists so that
+		// other callers can't reserve the same address.
+		return b.Put(k, []byte{})
+	})
+}
 
 // FreeIP implements Store.
-func (s *boltStore) FreeIP(sub, ip *net.IPNet) error { return nil }
+func (s *boltStore) FreeIP(sub, ip *net.IPNet) error {
+	if err := checkSubnetContains(sub, ip); err != nil {
+		return err
+	}
+
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketSubnets).Bucket(marshalIPNet(sub))
+		if b == nil {
+			return fmt.Errorf("wgipam: no such subnet %q", sub)
+		}
+
+		return b.Delete(marshalIPNet(ip))
+	})
+}
 
 // timeNow returns the current time with a 1 second granularity.
 func timeNow() time.Time {
@@ -382,4 +455,34 @@ func keyBytes(k uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, k)
 	return b
+}
+
+// checkSubnetContains verifies that ip resides within sub.
+func checkSubnetContains(sub, ip *net.IPNet) error {
+	if !sub.Contains(ip.IP) {
+		return fmt.Errorf("wgipam: subnet %q cannot contain IP %q", sub, ip)
+	}
+
+	return nil
+}
+
+// TODO(mdlayher): smarter marshaling and unmarshaling logic.
+
+// marshalIPNet marshals a net.IPNet into binary form.
+func marshalIPNet(n *net.IPNet) []byte {
+	return []byte(n.String())
+}
+
+// unmarshalIPNet unmarshals a net.IPNet from binary form.
+func unmarshalIPNet(b []byte) (*net.IPNet, error) {
+	ip, cidr, err := net.ParseCIDR(string(b))
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(mdlayher): figure out if we're retaining the subnet's mask or
+	// doing /32 and /128.
+	cidr.IP = ip
+
+	return cidr, nil
 }

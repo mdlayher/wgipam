@@ -24,14 +24,19 @@ import (
 	"github.com/mdlayher/wgipam"
 )
 
+// Populated fixtures for use in tests.
 var (
-	// okLease is a lease which is fully populated and can be used in tests.
 	okLease = &wgipam.Lease{
 		IPv4:   mustCIDR("192.0.2.0/32"),
 		IPv6:   mustCIDR("2001:db8::/128"),
 		Start:  time.Unix(1, 0),
 		Length: 10 * time.Second,
 	}
+
+	okSubnet4 = mustCIDR("192.0.2.0/24")
+	okIP4     = mustCIDR("192.0.2.1/32")
+	okSubnet6 = mustCIDR("2001:db8::/64")
+	okIP6     = mustCIDR("2001:db8::1/128")
 )
 
 // MakeStore is a function which produces a new wgipam.Store on each
@@ -69,8 +74,40 @@ func TestStore(t *testing.T, ms MakeStore) {
 			fn:   testDeleteLeaseOK,
 		},
 		{
-			name: "purge lease OK",
-			fn:   testPurgeLeaseOK,
+			name: "purge OK",
+			fn:   testPurgeOK,
+		},
+		{
+			name: "subnets empty",
+			fn:   testSubnetsEmpty,
+		},
+		{
+			name: "subnets OK",
+			fn:   testSubnetsOK,
+		},
+		{
+			name: "allocate IP mismatched subnet",
+			fn:   testAllocateIPMismatchedSubnet,
+		},
+		{
+			name: "allocate IP no subnet",
+			fn:   testAllocateIPNoSubnet,
+		},
+		{
+			name: "allocate IP already allocated",
+			fn:   testAllocateIPAlreadyAllocated,
+		},
+		{
+			name: "free IP mismatched subnet",
+			fn:   testFreeIPMismatchedSubnet,
+		},
+		{
+			name: "free IP no subnet",
+			fn:   testFreeIPNoSubnet,
+		},
+		{
+			name: "free IP OK",
+			fn:   testFreeIPOK,
 		},
 	}
 
@@ -187,7 +224,7 @@ func testDeleteLeaseOK(t *testing.T, s wgipam.Store) {
 	}
 }
 
-func testPurgeLeaseOK(t *testing.T, s wgipam.Store) {
+func testPurgeOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	// Leases start every 100 seconds and last 10 seconds.
@@ -232,6 +269,125 @@ func testPurgeLeaseOK(t *testing.T, s wgipam.Store) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("unexpected Leases (-want +got):\n%s", diff)
+	}
+}
+
+func testSubnetsEmpty(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	subnets, err := s.Subnets()
+	if err != nil {
+		t.Fatalf("failed to get subnets: %v", err)
+	}
+	if diff := cmp.Diff(0, len(subnets)); diff != "" {
+		t.Fatalf("unexpected number of subnets (-want +got):\n%s", diff)
+	}
+}
+
+func testSubnetsOK(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	// Save some synthetic subnets to be fetched again later.
+	want := []*net.IPNet{okSubnet4, okSubnet6}
+	for _, sub := range want {
+		if err := s.SaveSubnet(sub); err != nil {
+			t.Fatalf("failed to save subnet: %v", err)
+		}
+	}
+
+	got, err := s.Subnets()
+	if err != nil {
+		t.Fatalf("failed to get subnets: %v", err)
+	}
+
+	// No ordering guarantees are made, so sort both slices for comparison.
+	sort.SliceStable(want, func(i, j int) bool {
+		return want[i].String() < want[j].String()
+	})
+	sort.SliceStable(got, func(i, j int) bool {
+		return got[i].String() < got[j].String()
+	})
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected Subnets (-want +got):\n%s", diff)
+	}
+}
+
+func testAllocateIPMismatchedSubnet(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	// An IPv6 address cannot possibly reside in an IPv4 subnet.
+	if err := s.AllocateIP(okSubnet4, okIP6); err == nil {
+		t.Fatal("expected mismatched subnet error, but none occurred")
+	}
+}
+
+func testAllocateIPNoSubnet(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	if err := s.AllocateIP(okSubnet4, okIP4); err == nil {
+		t.Fatal("expected no such subnet error, but none occurred")
+	}
+}
+
+func testAllocateIPAlreadyAllocated(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	if err := s.SaveSubnet(okSubnet4); err != nil {
+		t.Fatalf("failed to save subnet: %v", err)
+	}
+
+	// First call succeeds, second cannot.
+	if err := s.AllocateIP(okSubnet4, okIP4); err != nil {
+		t.Fatalf("failed to allocate IP: %v", err)
+	}
+	if err := s.AllocateIP(okSubnet4, okIP4); err == nil {
+		t.Fatal("expected IP already allocated error, but none occurred")
+	}
+}
+
+func testFreeIPMismatchedSubnet(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	// An IPv6 address cannot possibly reside in an IPv4 subnet.
+	if err := s.FreeIP(okSubnet4, okIP6); err == nil {
+		t.Fatal("expected mismatched subnet error, but none occurred")
+	}
+}
+
+func testFreeIPNoSubnet(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	if err := s.FreeIP(okSubnet4, okIP4); err == nil {
+		t.Fatal("expected no such subnet error, but none occurred")
+	}
+}
+
+func testFreeIPOK(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	// Allocate IP addresses in multiple subnets and ensure they can also
+	// be freed idempotently.
+	pairs := [][2]*net.IPNet{
+		{okSubnet4, okIP4},
+		{okSubnet6, okIP6},
+	}
+
+	for _, p := range pairs {
+		if err := s.SaveSubnet(p[0]); err != nil {
+			t.Fatalf("failed to save subnet: %v", err)
+		}
+
+		if err := s.AllocateIP(p[0], p[1]); err != nil {
+			t.Fatalf("failed to allocate IP: %v", err)
+		}
+
+		// Repeated frees should be idempotent.
+		for i := 0; i < 3; i++ {
+			if err := s.FreeIP(p[0], p[1]); err != nil {
+				t.Fatalf("failed to free IP: %v", err)
+			}
+		}
 	}
 }
 
