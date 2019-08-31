@@ -307,7 +307,7 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 // Delete removes a key from the bucket.
 // If the key does not exist then nothing is done and a nil error is returned.
 // Returns an error if the bucket was created from a read-only transaction.
-func (b *Bucket) DeleteLease(key []byte) error {
+func (b *Bucket) Delete(key []byte) error {
 	if b.tx.db == nil {
 		return ErrTxClosed
 	} else if !b.Writable() {
