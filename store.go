@@ -15,7 +15,9 @@ package wgipam
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -53,20 +55,41 @@ type Store interface {
 
 	// Purge purge Leases which expire on or before the specified point in time.
 	// Purge operations that specify the same point in time should be
-	// idempotent; the same rules apply as with Delete.
+	// idempotent; the same rules apply as with DeleteLease.
 	Purge(t time.Time) error
+
+	// Subnets returns all existing ubnets. Note that the order of the subnets
+	// is unspecified. The caller must sort the leases for deterministic output.
+	Subnets() (subnets []*net.IPNet, err error)
+
+	// SaveSubnet creates or updates a Subnet by its CIDR value.
+	SaveSubnet(subnet *net.IPNet) error
+
+	// AllocateIP allocates an IP address from the specified subnet. It returns
+	// an error if the subnet does not exist or if ip is already allocated from
+	// the subnet.
+	AllocateIP(subnet, ip *net.IPNet) error
+
+	// FreeIP frees an allocated IP address in the specified subnet. FreeIP
+	// operations should be idempotent; the same rules apply as with DeleteLease.
+	// It returns an error if the subnet does not exist.
+	FreeIP(subnet, ip *net.IPNet) error
 }
 
 // A memoryStore is an in-memory Store implementation.
 type memoryStore struct {
-	mu sync.RWMutex
-	m  map[uint64]*Lease
+	leasesMu sync.RWMutex
+	leases   map[uint64]*Lease
+
+	subnetsMu sync.RWMutex
+	subnets   map[string]map[string]struct{}
 }
 
-// MemoryStore returns a Store which stores Leases in memory.
+// MemoryStore returns a Store which stores data in memory.
 func MemoryStore() Store {
 	return &memoryStore{
-		m: make(map[uint64]*Lease),
+		leases:  make(map[uint64]*Lease),
+		subnets: make(map[string]map[string]struct{}),
 	}
 }
 
@@ -75,12 +98,12 @@ func (s *memoryStore) Close() error { return nil }
 
 // Leases implements Store.
 func (s *memoryStore) Leases() ([]*Lease, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.leasesMu.RLock()
+	defer s.leasesMu.RUnlock()
 
 	// Return order is unspecified, so map iteration is no problem.
-	ls := make([]*Lease, 0, len(s.m))
-	for _, l := range s.m {
+	ls := make([]*Lease, 0, len(s.leases))
+	for _, l := range s.leases {
 		ls = append(ls, l)
 	}
 
@@ -89,44 +112,103 @@ func (s *memoryStore) Leases() ([]*Lease, error) {
 
 // Lease implements Store.
 func (s *memoryStore) Lease(key uint64) (*Lease, bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.leasesMu.RLock()
+	defer s.leasesMu.RUnlock()
 
-	l, ok := s.m[key]
+	l, ok := s.leases[key]
 	return l, ok, nil
 }
 
 // SaveLease implements Store.
 func (s *memoryStore) SaveLease(key uint64, l *Lease) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.leasesMu.Lock()
+	defer s.leasesMu.Unlock()
 
-	s.m[key] = l
+	s.leases[key] = l
 	return nil
 }
 
 // DeleteLease implements Store.
 func (s *memoryStore) DeleteLease(key uint64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.leasesMu.Lock()
+	defer s.leasesMu.Unlock()
 
-	delete(s.m, key)
+	delete(s.leases, key)
 	return nil
 }
 
 // Purge implements Store.
 func (s *memoryStore) Purge(t time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.leasesMu.Lock()
+	defer s.leasesMu.Unlock()
 
 	// Deleting from a map during iteration is okay:
 	// https://golang.org/doc/effective_go.html#for.
-	for k, v := range s.m {
+	for k, v := range s.leases {
 		if v.Expired(t) {
-			delete(s.m, k)
+			delete(s.leases, k)
 		}
 	}
 
+	return nil
+}
+
+// Subnets implements Store.
+func (s *memoryStore) Subnets() ([]*net.IPNet, error) {
+	s.subnetsMu.RLock()
+	defer s.subnetsMu.RUnlock()
+
+	// Return order is unspecified, so map iteration is no problem.
+	ss := make([]*net.IPNet, 0, len(s.subnets))
+	for sub := range s.subnets {
+		_, cidr, err := net.ParseCIDR(sub)
+		if err != nil {
+			return nil, err
+		}
+
+		ss = append(ss, cidr)
+	}
+
+	return ss, nil
+}
+
+// SaveSubnet implements Store.
+func (s *memoryStore) SaveSubnet(sub *net.IPNet) error {
+	s.subnetsMu.Lock()
+	defer s.subnetsMu.Unlock()
+
+	s.subnets[sub.String()] = make(map[string]struct{})
+	return nil
+}
+
+// AllocateIP implements Store.
+func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) (err error) {
+	s.subnetsMu.Lock()
+	defer s.subnetsMu.Unlock()
+
+	subS, ipS := sub.String(), ip.String()
+	if _, ok := s.subnets[subS]; !ok {
+		return fmt.Errorf("wgipam: no such subnet %q", subS)
+	}
+	if _, ok := s.subnets[subS][ipS]; ok {
+		return fmt.Errorf("wgipam: subnet %q address %q is already allocated", subS, ipS)
+	}
+
+	s.subnets[subS][ipS] = struct{}{}
+	return nil
+}
+
+// FreeIP implements Store.
+func (s *memoryStore) FreeIP(sub, ip *net.IPNet) error {
+	s.subnetsMu.Lock()
+	defer s.subnetsMu.Unlock()
+
+	subS, ipS := sub.String(), ip.String()
+	if _, ok := s.subnets[subS]; !ok {
+		return fmt.Errorf("wgipam: no such subnet %q", subS)
+	}
+
+	delete(s.subnets[subS], ipS)
 	return nil
 }
 
@@ -267,6 +349,18 @@ func (s *boltStore) Purge(t time.Time) error {
 		return nil
 	})
 }
+
+// Subnets implements Store.
+func (s *boltStore) Subnets() ([]*net.IPNet, error) { return nil, nil }
+
+// SaveSubnet implements Store.
+func (s *boltStore) SaveSubnet(sub *net.IPNet) error { return nil }
+
+// SaveSubnet implements Store.
+func (s *boltStore) AllocateIP(sub, ip *net.IPNet) error { return nil }
+
+// FreeIP implements Store.
+func (s *boltStore) FreeIP(sub, ip *net.IPNet) error { return nil }
 
 // timeNow returns the current time with a 1 second granularity.
 func timeNow() time.Time {

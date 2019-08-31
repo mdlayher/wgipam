@@ -22,42 +22,43 @@ import (
 )
 
 var (
-	_ IPStore = &memoryIPStore{}
+	_ IPAllocator = &simpleIPAllocator{}
 )
 
-// An IPStore can allocate IP addresses. IPStore implementations should be
-// configured to only return IPv4 or IPv6 addresses: never both from the same
+// An IPAllocator can allocate IP addresses. IPAllocator implementations should
+// be configured to only return IPv4 or IPv6 addresses: never both from the same
 // instance.
-type IPStore interface {
+type IPAllocator interface {
 	// Allocate allocates the next available IP address. It returns false
 	// if no more IP addresses are available.
 	Allocate() (ip *net.IPNet, ok bool, err error)
 
-	// Free returns an allocated IP address to the IPStore. Free operations
+	// Free returns an allocated IP address to the IPAllocator. Free operations
 	// should be idempotent; that is, an error should only be returned if the
 	// free operation fails. Attempting to free an IP that did not already exist
 	// should not return an error.
 	Free(ip *net.IPNet) error
 }
 
-// A memoryIPStore is an in-memory IPStore implementation.
-type memoryIPStore struct {
+// A simpleIPAllocator is an IPAllocator that allocates addresses in order by
+// iterating through its input subnets.
+type simpleIPAllocator struct {
+	s   Store
 	mu  sync.Mutex
-	m   map[*net.IPNet]struct{}
 	c   *ipaddr.Cursor
 	out bool
 }
 
-// DualStackIPStore returns an IPStore for each IPv4 and IPv6 address allocation.
-// It is a convenience wrapper around NewIPStore that automatically allocates
-// the input subnets into the appropriate IPStore.
-func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
+// DualStackIPAllocator returns two IPAllocators for each IPv4 and IPv6 address
+// allocation. It is a convenience wrapper around NewIPAllocator that
+// automatically allocates the input subnets into the appropriate IPAllocator.
+func DualStackIPAllocator(store Store, subnets []*net.IPNet) (ip4s, ip6s IPAllocator, err error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
-		return nil, nil, errors.New("wgipam: DualStackIPStore must have one or more subnets to serve")
+		return nil, nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
 	}
 
-	// Split subnets by family and create IPStores for each.
+	// Split subnets by family and create IPAllocators for each.
 	var sub4, sub6 []*net.IPNet
 	for _, s := range subnets {
 		if s.IP.To4() != nil {
@@ -68,7 +69,7 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	}
 
 	if len(sub4) > 0 {
-		ips, err := MemoryIPStore(sub4)
+		ips, err := SimpleIPAllocator(store, sub4)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -76,7 +77,7 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	}
 
 	if len(sub6) > 0 {
-		ips, err := MemoryIPStore(sub6)
+		ips, err := SimpleIPAllocator(store, sub6)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -86,12 +87,12 @@ func DualStackIPStore(subnets []*net.IPNet) (ip4s, ip6s IPStore, err error) {
 	return ip4s, ip6s, nil
 }
 
-// MemoryIPStore returns an IPStore which allocates IP addresses from memory. The
-// specified subnets must use a single IP address family: either IPv4 or IPv6
-// exclusively.
-func MemoryIPStore(subnets []*net.IPNet) (IPStore, error) {
+// SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
+// by iterating through its subnets. The input subnets must use a single IP
+// address family: either IPv4 or IPv6 exclusively.
+func SimpleIPAllocator(store Store, subnets []*net.IPNet) (IPAllocator, error) {
 	if len(subnets) == 0 {
-		return nil, errors.New("wgipam: NewIPStore requires one or more subnets")
+		return nil, errors.New("wgipam: NewIPAllocator requires one or more subnets")
 	}
 
 	ps := make([]ipaddr.Prefix, 0, len(subnets))
@@ -103,20 +104,24 @@ func MemoryIPStore(subnets []*net.IPNet) (IPStore, error) {
 		}
 
 		if (isIPv6 && s.IP.To4() != nil) || (!isIPv6 && s.IP.To4() == nil) {
-			return nil, errors.New("wgipam: all IPStore subnets must be the same address family")
+			return nil, errors.New("wgipam: all IPAllocator subnets must be the same address family")
 		}
 
+		// Register this subnet with our Store for later use.
 		ps = append(ps, *ipaddr.NewPrefix(s))
+		if err := store.SaveSubnet(s); err != nil {
+			return nil, err
+		}
 	}
 
-	return &memoryIPStore{
-		m: make(map[*net.IPNet]struct{}),
+	return &simpleIPAllocator{
+		s: store,
 		c: ipaddr.NewCursor(ps),
 	}, nil
 }
 
-// Allocate implements IPStore.
-func (s *memoryIPStore) Allocate() (*net.IPNet, bool, error) {
+// Allocate implements IPAllocator.
+func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -136,16 +141,18 @@ func (s *memoryIPStore) Allocate() (*net.IPNet, bool, error) {
 		IP:   p.IP,
 		Mask: p.Prefix.Mask,
 	}
-	s.m[ip] = struct{}{}
+
+	if err := s.s.AllocateIP(&p.Prefix.IPNet, ip); err != nil {
+		return nil, false, err
+	}
 
 	return ip, true, nil
 }
 
-// Free implements IPStore.
-func (s *memoryIPStore) Free(ip *net.IPNet) error {
+// Free implements IPAllocator.
+func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.m, ip)
 	return nil
 }

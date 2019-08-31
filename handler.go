@@ -29,7 +29,7 @@ type Handler struct {
 
 	// IPv4 and IPv6 specify IPStores for IPv4 and IPv6 addresses, respectively.
 	// If either are nil, addresses will not be allocated for that family.
-	IPv4, IPv6 IPStore
+	IPv4, IPv6 IPAllocator
 
 	// Leases specifies a Store for Lease storage. If nil, Leases are not
 	// used, and all incoming requests will allocate new IP addresses.
@@ -190,7 +190,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 }
 
 // allocate allocates IP addresses from ips. If ips is nil, it returns early.
-func allocate(ips IPStore) (*net.IPNet, bool, error) {
+func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
 	if ips == nil {
 		// Shortcut to make calling code more concise.
 		return nil, false, nil
@@ -200,7 +200,7 @@ func allocate(ips IPStore) (*net.IPNet, bool, error) {
 }
 
 // free frees an IP addresses in ips. If ips is nil, it returns early.
-func free(ips IPStore, ip *net.IPNet) error {
+func free(ips IPAllocator, ip *net.IPNet) error {
 	if ips == nil {
 		// Shortcut to make calling code more concise.
 		return nil

@@ -154,9 +154,9 @@ func main() {
 		ll.Printf("listening on %q, serving: %s",
 			l.Addr(), subnetsString(ifi.Subnets))
 
-		ip4s, ip6s, err := wgipam.DualStackIPStore(ifi.Subnets)
+		ip4s, ip6s, err := wgipam.DualStackIPAllocator(store, ifi.Subnets)
 		if err != nil {
-			ll.Fatalf("failed to create IP stores: %v", err)
+			ll.Fatalf("failed to create IP allocator: %v", err)
 		}
 
 		h := &wgipam.Handler{

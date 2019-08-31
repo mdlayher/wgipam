@@ -231,16 +231,18 @@ func TestHandlerRequestIP(t *testing.T) {
 }
 
 func mustHandler(subnets []*net.IPNet) *wgipam.Handler {
-	ip4s, ip6s, err := wgipam.DualStackIPStore(subnets)
+	store := wgipam.MemoryStore()
+
+	ip4s, ip6s, err := wgipam.DualStackIPAllocator(store, subnets)
 	if err != nil {
-		panicf("failed to create IP stores: %v", err)
+		panicf("failed to create IPAllocators: %v", err)
 	}
 
 	return &wgipam.Handler{
 		IPv4: ip4s,
 		IPv6: ip6s,
 		// Leases are always ephemeral in this test handler.
-		Leases: wgipam.MemoryStore(),
+		Leases: store,
 	}
 }
 

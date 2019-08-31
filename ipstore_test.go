@@ -28,8 +28,8 @@ var (
 	sub6 = mustCIDR("2001:db8::/126")
 )
 
-func TestDualStackIPStore(t *testing.T) {
-	contains := func(t *testing.T, ips wgipam.IPStore, sub *net.IPNet) {
+func TestDualStackIPAllocator(t *testing.T) {
+	contains := func(t *testing.T, ips wgipam.IPAllocator, sub *net.IPNet) {
 		t.Helper()
 
 		// Allocate an address from the pool and verify it is contained within
@@ -51,7 +51,7 @@ func TestDualStackIPStore(t *testing.T) {
 		name    string
 		subnets []*net.IPNet
 		ok      bool
-		check   func(t *testing.T, ip4s, ip6s wgipam.IPStore)
+		check   func(t *testing.T, ip4s, ip6s wgipam.IPAllocator)
 	}{
 		{
 			name: "no subnets",
@@ -60,7 +60,7 @@ func TestDualStackIPStore(t *testing.T) {
 			name:    "OK IPv4 only",
 			subnets: []*net.IPNet{sub4},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
 				if ip6s != nil {
 					t.Fatal("allocated IPv6 store but no addresses specified")
 				}
@@ -72,7 +72,7 @@ func TestDualStackIPStore(t *testing.T) {
 			name:    "OK IPv6 only",
 			subnets: []*net.IPNet{sub6},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
 				if ip4s != nil {
 					t.Fatal("allocated IPv4 store but no addresses specified")
 				}
@@ -84,7 +84,7 @@ func TestDualStackIPStore(t *testing.T) {
 			name:    "OK dual stack",
 			subnets: []*net.IPNet{sub4, sub6},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPStore, ip6s wgipam.IPStore) {
+			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
 				contains(t, ip4s, sub4)
 				contains(t, ip6s, sub6)
 			},
@@ -93,9 +93,9 @@ func TestDualStackIPStore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ip4s, ip6s, err := wgipam.DualStackIPStore(tt.subnets)
+			ip4s, ip6s, err := wgipam.DualStackIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if tt.ok && err != nil {
-				t.Fatalf("failed to create IPStores: %v", err)
+				t.Fatalf("failed to create IPAllocators: %v", err)
 			}
 			if !tt.ok && err == nil {
 				t.Fatal("expected an error, but none occurred")
@@ -109,7 +109,7 @@ func TestDualStackIPStore(t *testing.T) {
 	}
 }
 
-func TestIPStoreAllocate(t *testing.T) {
+func TestIPAllocatorAllocate(t *testing.T) {
 	tests := []struct {
 		name    string
 		subnets []*net.IPNet
@@ -159,9 +159,9 @@ func TestIPStoreAllocate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ips, err := wgipam.MemoryIPStore(tt.subnets)
+			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if tt.ok && err != nil {
-				t.Fatalf("failed to create IPStore: %v", err)
+				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
 			if !tt.ok && err == nil {
 				t.Fatal("expected an error, but none occurred")
@@ -208,17 +208,17 @@ func TestIPStoreAllocate(t *testing.T) {
 	}
 }
 
-func TestIPStoreFree(t *testing.T) {
+func TestIPAllocatorFree(t *testing.T) {
 	tests := []struct {
 		name    string
 		subnets []*net.IPNet
-		alloc   func(t *testing.T, ips wgipam.IPStore) *net.IPNet
+		alloc   func(t *testing.T, ips wgipam.IPAllocator) *net.IPNet
 		ok      bool
 	}{
 		{
 			name:    "not allocated",
 			subnets: []*net.IPNet{sub4},
-			alloc: func(_ *testing.T, _ wgipam.IPStore) *net.IPNet {
+			alloc: func(_ *testing.T, _ wgipam.IPAllocator) *net.IPNet {
 				// Allocate a random address outside of sub4.
 				return mustCIDR("192.0.2.1/32")
 			},
@@ -227,7 +227,7 @@ func TestIPStoreFree(t *testing.T) {
 		{
 			name:    "allocated",
 			subnets: []*net.IPNet{sub6},
-			alloc: func(t *testing.T, ips wgipam.IPStore) *net.IPNet {
+			alloc: func(t *testing.T, ips wgipam.IPAllocator) *net.IPNet {
 				// Allocate directly from sub6.
 				ip, ok, err := ips.Allocate()
 				if err != nil {
@@ -245,9 +245,9 @@ func TestIPStoreFree(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ips, err := wgipam.MemoryIPStore(tt.subnets)
+			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if err != nil {
-				t.Fatalf("failed to create IPStore: %v", err)
+				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
 
 			err = ips.Free(tt.alloc(t, ips))
