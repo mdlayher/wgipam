@@ -27,6 +27,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -35,6 +37,8 @@ import (
 	"github.com/mdlayher/wgdynamic-go"
 	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/config"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -89,6 +93,48 @@ func main() {
 		return nil
 	})
 
+	// Set up Prometheus instrumentation using the typical Go collectors.
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(
+		prometheus.NewGoCollector(),
+		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+	)
+
+	// Configure the HTTP debug server, if applicable.
+	if cfg.Debug.Address != "" {
+		l, err := net.Listen("tcp", cfg.Debug.Address)
+		if err != nil {
+			log.Fatalf("failed to start debug listener: %v", err)
+		}
+
+		log.Printf("starting debug listener on %q: prometheus: %v, pprof: %v",
+			cfg.Debug.Address, cfg.Debug.Prometheus, cfg.Debug.PProf)
+
+		// Serve requests until the context is canceled.
+		eg.Go(func() error {
+			<-ctx.Done()
+			return l.Close()
+		})
+
+		eg.Go(func() error {
+			mux := http.NewServeMux()
+
+			if cfg.Debug.Prometheus {
+				mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+			}
+
+			if cfg.Debug.PProf {
+				mux.HandleFunc("/debug/pprof/", pprof.Index)
+				mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+				mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+				mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+				mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			}
+
+			return serve(http.Serve(l, mux))
+		})
+	}
+
 	// Serve on each specified interface.
 	for _, ifi := range cfg.Interfaces {
 		ll := log.New(os.Stderr, ifi.Name+": ", log.LstdFlags)
@@ -132,7 +178,7 @@ func main() {
 		})
 
 		eg.Go(func() error {
-			return serve(s, l)
+			return serve(s.Serve(l))
 		})
 
 		// Purge expired leases at regular intervals.
@@ -182,20 +228,22 @@ func subnetsString(subnets []*net.IPNet) string {
 	return strings.Join(ss, ", ")
 }
 
-// serve wraps s.Serve and handles certain errors as appropriate.
-func serve(s *wgdynamic.Server, l net.Listener) error {
-	if err := s.Serve(l); err != nil {
-		nerr, ok := err.(*net.OpError)
-		if !ok {
-			return err
-		}
+// serve unpacks and handles certain network listener errors as appropriate.
+func serve(err error) error {
+	if err == nil {
+		return nil
+	}
 
-		// Unfortunately there isn't an easier way to check for this, but
-		// we want to ignore errors related to the connection closing, since
-		// s.Close is triggered on signal.
-		if nerr.Err.Error() != "use of closed network connection" {
-			return err
-		}
+	nerr, ok := err.(*net.OpError)
+	if !ok {
+		return err
+	}
+
+	// Unfortunately there isn't an easier way to check for this, but
+	// we want to ignore errors related to the connection closing, since
+	// s.Close is triggered on signal.
+	if nerr.Err.Error() != "use of closed network connection" {
+		return err
 	}
 
 	return nil
