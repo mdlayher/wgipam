@@ -43,10 +43,11 @@ type IPAllocator interface {
 // A simpleIPAllocator is an IPAllocator that allocates addresses in order by
 // iterating through its input subnets.
 type simpleIPAllocator struct {
-	s   Store
-	mu  sync.Mutex
-	c   *ipaddr.Cursor
-	out bool
+	s       Store
+	mu      sync.Mutex
+	c       *ipaddr.Cursor
+	out     bool
+	subnets []*net.IPNet
 }
 
 // DualStackIPAllocator returns two IPAllocators for each IPv4 and IPv6 address
@@ -115,8 +116,9 @@ func SimpleIPAllocator(store Store, subnets []*net.IPNet) (IPAllocator, error) {
 	}
 
 	return &simpleIPAllocator{
-		s: store,
-		c: ipaddr.NewCursor(ps),
+		s:       store,
+		c:       ipaddr.NewCursor(ps),
+		subnets: subnets,
 	}, nil
 }
 
@@ -153,6 +155,16 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	for _, sub := range s.subnets {
+		if !sub.Contains(ip.IP) {
+			continue
+		}
+
+		if err := s.s.FreeIP(sub, ip); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

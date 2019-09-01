@@ -270,7 +270,7 @@ func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
 
 // free frees an IP addresses in ips. If ips is nil, it returns early.
 func free(ips IPAllocator, ip *net.IPNet) error {
-	if ips == nil {
+	if ips == nil || ip == nil {
 		// Shortcut to make calling code more concise.
 		return nil
 	}
