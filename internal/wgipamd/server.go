@@ -40,7 +40,8 @@ type Server struct {
 	ll  *log.Logger
 	reg *prometheus.Registry
 
-	eg *errgroup.Group
+	eg    *errgroup.Group
+	ready chan struct{}
 }
 
 // NewServer creates a Server with the input configuration and logger. If ll
@@ -63,9 +64,13 @@ func NewServer(cfg config.Config, ll *log.Logger) *Server {
 		ll:  ll,
 		reg: reg,
 
-		eg: &errgroup.Group{},
+		eg:    &errgroup.Group{},
+		ready: make(chan struct{}),
 	}
 }
+
+// Ready indicates that the server is ready to begin serving requests.
+func (s *Server) Ready() <-chan struct{} { return s.ready }
 
 // Run runs the wgipamd server until the context is canceled.
 func (s *Server) Run(ctx context.Context) error {
@@ -89,7 +94,9 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}
 
-	// Wait for all goroutines to be canceled and stopped successfully.
+	// Indicate readiness to any waiting callers, and then wwait for all
+	// goroutines to be canceled and stopped successfully.
+	close(s.ready)
 	if err := s.eg.Wait(); err != nil {
 		return fmt.Errorf("failed to serve: %v", err)
 	}
@@ -100,6 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 // runServer runs a wg-dynamic server for a single interface using goroutines,
 // until ctx is canceled.
 func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgipam.Store) error {
+	// TODO(mdlayher): add test hook for arbitrary net.Listener.
 	l, err := wgdynamic.Listen(ifi.Name)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %q: %v", ifi.Name, err)
