@@ -34,11 +34,11 @@ storage:
 # Specify one or more WireGuard interfaces to listen on for IP
 # assignment requests.
 interfaces:
-- name: "wg0"
-  # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.
-  subnets:
-  - "192.0.2.0/24"
-  - "2001:db8::/64"
+  - name: "wg0"
+    # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.
+    subnets:
+      - "192.0.2.0/24"
+      - "2001:db8::/64"
 # Enable or disable the debug HTTP server for facilities such as Prometheus
 # metrics and pprof support.
 #
