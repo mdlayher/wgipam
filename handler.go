@@ -147,17 +147,13 @@ func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.Req
 
 		// We must also free the address of the other pool in case just one of
 		// the address family pools was empty.
-		if ip4 != nil {
-			if err := free(h.IPv4, ip4); err != nil {
-				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-				h.logf(src, "failed to free temporarily allocated IPv4 address %s: %v", ip4, err)
-			}
+		if err := free(h.IPv4, ip4); err != nil {
+			// TODO(mdlayher): better error handling, Prometheus metrics, etc.
+			h.logf(src, "failed to free temporarily allocated IPv4 address %s: %v", ip4, err)
 		}
-		if ip6 != nil {
-			if err := free(h.IPv6, ip6); err != nil {
-				// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-				h.logf(src, "failed to free temporarily allocated IPv6 address %s: %v", ip6, err)
-			}
+		if err := free(h.IPv6, ip6); err != nil {
+			// TODO(mdlayher): better error handling, Prometheus metrics, etc.
+			h.logf(src, "failed to free temporarily allocated IPv6 address %s: %v", ip6, err)
 		}
 
 		return nil, &wgdynamic.Error{
@@ -268,7 +264,7 @@ func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
 	return ips.Allocate()
 }
 
-// free frees an IP addresses in ips. If ips is nil, it returns early.
+// free frees an IP addresses in ips. If ips or ip are nil, it returns early.
 func free(ips IPAllocator, ip *net.IPNet) error {
 	if ips == nil || ip == nil {
 		// Shortcut to make calling code more concise.
