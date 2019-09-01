@@ -1,6 +1,7 @@
 image: archlinux
 packages:
   - go
+  - yamllint
 sources:
   - https://github.com/mdlayher/wgipam
 environment:
@@ -16,3 +17,7 @@ tasks:
       /home/build/go/bin/staticcheck ./...
       /home/build/go/bin/golint -set_exit_status . ./cmd/... ./internal/...
       go test -v -race ./...
+      # Ensure a valid and sane YAML configuration can be generated.
+      go build ./cmd/wgipamd/
+      ./wgipamd -init
+      yamllint ./wgipamd.yaml
