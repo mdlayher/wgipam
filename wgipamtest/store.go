@@ -317,7 +317,7 @@ func testAllocateIPMismatchedSubnet(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
 	// An IPv6 address cannot possibly reside in an IPv4 subnet.
-	if err := s.AllocateIP(okSubnet4, okIP6); err == nil {
+	if _, err := s.AllocateIP(okSubnet4, okIP6); err == nil {
 		t.Fatal("expected mismatched subnet error, but none occurred")
 	}
 }
@@ -325,7 +325,7 @@ func testAllocateIPMismatchedSubnet(t *testing.T, s wgipam.Store) {
 func testAllocateIPNoSubnet(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
-	if err := s.AllocateIP(okSubnet4, okIP4); err == nil {
+	if _, err := s.AllocateIP(okSubnet4, okIP4); err == nil {
 		t.Fatal("expected no such subnet error, but none occurred")
 	}
 }
@@ -338,11 +338,13 @@ func testAllocateIPAlreadyAllocated(t *testing.T, s wgipam.Store) {
 	}
 
 	// First call succeeds, second cannot.
-	if err := s.AllocateIP(okSubnet4, okIP4); err != nil {
-		t.Fatalf("failed to allocate IP: %v", err)
+	ok, err := s.AllocateIP(okSubnet4, okIP4)
+	if err != nil || !ok {
+		t.Fatalf("failed to allocate IP: ok: %v, err: %v", ok, err)
 	}
-	if err := s.AllocateIP(okSubnet4, okIP4); err == nil {
-		t.Fatal("expected IP already allocated error, but none occurred")
+	ok, err = s.AllocateIP(okSubnet4, okIP4)
+	if err != nil || ok {
+		t.Fatalf("expected IP already allocated: ok: %v, err: %v", ok, err)
 	}
 }
 
@@ -378,8 +380,8 @@ func testFreeIPOK(t *testing.T, s wgipam.Store) {
 			t.Fatalf("failed to save subnet: %v", err)
 		}
 
-		if err := s.AllocateIP(p[0], p[1]); err != nil {
-			t.Fatalf("failed to allocate IP: %v", err)
+		if ok, err := s.AllocateIP(p[0], p[1]); err != nil || !ok {
+			t.Fatalf("failed to allocate IP: ok: %v, err: %v", ok, err)
 		}
 
 		// Repeated frees should be idempotent.

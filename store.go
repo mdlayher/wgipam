@@ -66,9 +66,9 @@ type Store interface {
 	SaveSubnet(subnet *net.IPNet) error
 
 	// AllocateIP allocates an IP address from the specified subnet. It returns
-	// an error if the subnet does not exist or if ip is already allocated from
-	// the subnet.
-	AllocateIP(subnet, ip *net.IPNet) error
+	// false if the address is already allocated from the subnet, and returns an
+	// error if the subnet does not exist.
+	AllocateIP(subnet, ip *net.IPNet) (ok bool, err error)
 
 	// FreeIP frees an allocated IP address in the specified subnet. FreeIP
 	// operations should be idempotent; the same rules apply as with DeleteLease.
@@ -184,9 +184,9 @@ func (s *memoryStore) SaveSubnet(sub *net.IPNet) error {
 }
 
 // AllocateIP implements Store.
-func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) error {
+func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) (bool, error) {
 	if err := checkSubnetContains(sub, ip); err != nil {
-		return err
+		return false, err
 	}
 
 	s.subnetsMu.Lock()
@@ -194,14 +194,16 @@ func (s *memoryStore) AllocateIP(sub, ip *net.IPNet) error {
 
 	subS, ipS := sub.String(), ip.String()
 	if _, ok := s.subnets[subS]; !ok {
-		return fmt.Errorf("wgipam: no such subnet %q", subS)
+		return false, fmt.Errorf("wgipam: no such subnet %q", subS)
 	}
 	if _, ok := s.subnets[subS][ipS]; ok {
-		return fmt.Errorf("wgipam: subnet %q address %q is already allocated", subS, ipS)
+		// Already allocated.
+		return false, nil
 	}
 
+	// New address allocated.
 	s.subnets[subS][ipS] = struct{}{}
-	return nil
+	return true, nil
 }
 
 // FreeIP implements Store.
@@ -399,12 +401,14 @@ func (s *boltStore) SaveSubnet(sub *net.IPNet) error {
 }
 
 // SaveSubnet implements Store.
-func (s *boltStore) AllocateIP(sub, ip *net.IPNet) error {
+func (s *boltStore) AllocateIP(sub, ip *net.IPNet) (bool, error) {
 	if err := checkSubnetContains(sub, ip); err != nil {
-		return err
+		return false, err
 	}
 
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	// Was the address allocated?
+	var ok bool
+	err := s.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(bucketSubnets).Bucket(marshalIPNet(sub))
 		if b == nil {
 			return fmt.Errorf("wgipam: no such subnet %q", sub)
@@ -412,13 +416,22 @@ func (s *boltStore) AllocateIP(sub, ip *net.IPNet) error {
 
 		k := marshalIPNet(ip)
 		if b.Get(k) != nil {
-			return fmt.Errorf("wgipam: subnet %q address %q is already allocated", sub, ip)
+			// Address already exists, return now and don't allocate anything.
+			return nil
 		}
 
+		// We can allocate this address, set ok to true.
+		//
 		// For now we don't store any data, we just ensure a key exists so that
 		// other callers can't reserve the same address.
+		ok = true
 		return b.Put(k, []byte{})
 	})
+	if err != nil {
+		return false, err
+	}
+
+	return ok, nil
 }
 
 // FreeIP implements Store.

@@ -127,28 +127,34 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.out {
-		// No more addresses to provide.
-		return nil, false, nil
-	}
+	for {
+		if s.out {
+			// No more addresses to provide.
+			return nil, false, nil
+		}
 
-	p := s.c.Pos()
-	if s.c.Next() == nil {
-		// We've reached the end of the cursor; no more IPs.
-		s.out = true
-	}
+		p := s.c.Pos()
+		if s.c.Next() == nil {
+			// We've reached the end of the cursor; no more IPs.
+			s.out = true
+		}
 
-	// Mark this address as allocated and return.
-	ip := &net.IPNet{
-		IP:   p.IP,
-		Mask: p.Prefix.Mask,
-	}
+		// Try to allocate this address. If unsuccessful, the loop will continue
+		// until we reach a free address or run out of IPs.
+		ip := &net.IPNet{
+			IP:   p.IP,
+			Mask: p.Prefix.Mask,
+		}
 
-	if err := s.s.AllocateIP(&p.Prefix.IPNet, ip); err != nil {
-		return nil, false, err
+		ok, err := s.s.AllocateIP(&p.Prefix.IPNet, ip)
+		if err != nil {
+			return nil, false, err
+		}
+		if ok {
+			// Address successfully allocated.
+			return ip, true, nil
+		}
 	}
-
-	return ip, true, nil
 }
 
 // Free implements IPAllocator.
