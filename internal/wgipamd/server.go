@@ -67,7 +67,6 @@ func NewServer(cfg config.Config, ll *log.Logger) *Server {
 		ll:  ll,
 		reg: reg,
 
-		eg:    &errgroup.Group{},
 		ready: make(chan struct{}),
 	}
 }
@@ -77,6 +76,11 @@ func (s *Server) Ready() <-chan struct{} { return s.ready }
 
 // Run runs the wgipamd server until the context is canceled.
 func (s *Server) Run(ctx context.Context) error {
+	// Attach the context to the errgroup so that goroutines are canceled when
+	// one of them returns an error.
+	eg, ctx := errgroup.WithContext(ctx)
+	s.eg = eg
+
 	// Serve on each specified interface.
 	stores := make(map[string]wgipam.Store)
 	for _, ifi := range s.cfg.Interfaces {
