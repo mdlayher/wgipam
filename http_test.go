@@ -99,12 +99,12 @@ func TestHTTPHandler(t *testing.T) {
 				t.Fatalf("unexpected HTTP status (-want +got):\n%s", diff)
 			}
 
-			if !tt.ok {
+			if !tt.ok || tt.leases == nil {
 				return
 			}
 
 			var leases []jsonLease
-			if err := json.NewDecoder(res.Body); err != nil {
+			if err := json.NewDecoder(res.Body).Decode(&leases); err != nil {
 				t.Fatalf("failed to decode leases: %v", err)
 			}
 
