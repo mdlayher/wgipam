@@ -53,17 +53,23 @@ type Store interface {
 	// return an error.
 	DeleteLease(key uint64) error
 
-	// Purge purge Leases which expire on or before the specified point in time.
+	// Purge purge Leases which expire on or before the specified point in time,
+	// and frees the IP addresses associated with the leases.
 	// Purge operations that specify the same point in time should be
 	// idempotent; the same rules apply as with DeleteLease.
 	Purge(t time.Time) error
 
-	// Subnets returns all existing ubnets. Note that the order of the subnets
+	// Subnets returns all existing subnets. Note that the order of the subnets
 	// is unspecified. The caller must sort the leases for deterministic output.
 	Subnets() (subnets []*net.IPNet, err error)
 
 	// SaveSubnet creates or updates a Subnet by its CIDR value.
 	SaveSubnet(subnet *net.IPNet) error
+
+	// AllocatedIPs returns all of the IP addresses allocated within a specific
+	// subnet. Note that the order of the addresses is unspecified. The caller
+	// must sort the addresses for deterministic output.
+	AllocatedIPs(subnet *net.IPNet) (ips []*net.IPNet, err error)
 
 	// AllocateIP allocates an IP address from the specified subnet. It returns
 	// false if the address is already allocated from the subnet, and returns an
@@ -144,13 +150,42 @@ func (s *memoryStore) Purge(t time.Time) error {
 
 	// Deleting from a map during iteration is okay:
 	// https://golang.org/doc/effective_go.html#for.
+
+	// Track the IP addresses that belong to expired leases.
+	var freed []*net.IPNet
 	for k, v := range s.leases {
-		if v.Expired(t) {
-			delete(s.leases, k)
+		if !v.Expired(t) {
+			continue
+		}
+
+		delete(s.leases, k)
+
+		if v.IPv4 != nil {
+			freed = append(freed, v.IPv4)
+		}
+		if v.IPv6 != nil {
+			freed = append(freed, v.IPv6)
 		}
 	}
 
-	// TODO(mdlayher): also purge any IP allocations for expired leases.
+	s.subnetsMu.Lock()
+	defer s.subnetsMu.Unlock()
+
+	// And sweep through each subnet, freeing IP addresses whose leases have
+	// expired.
+	for sub := range s.subnets {
+		ip, cidr, err := net.ParseCIDR(sub)
+		if err != nil {
+			return err
+		}
+		cidr.IP = ip
+
+		for _, f := range freed {
+			if cidr.Contains(f.IP) {
+				delete(s.subnets[sub], f.String())
+			}
+		}
+	}
 
 	return nil
 }
@@ -181,6 +216,30 @@ func (s *memoryStore) SaveSubnet(sub *net.IPNet) error {
 
 	s.subnets[sub.String()] = make(map[string]struct{})
 	return nil
+}
+
+// AllocatedIPs implements Store.
+func (s *memoryStore) AllocatedIPs(sub *net.IPNet) ([]*net.IPNet, error) {
+	s.subnetsMu.RLock()
+	defer s.subnetsMu.RUnlock()
+
+	subS := sub.String()
+	if _, ok := s.subnets[subS]; !ok {
+		return nil, fmt.Errorf("wgipam: no such subnet %q", subS)
+	}
+
+	ips := make([]*net.IPNet, 0, len(s.subnets[subS]))
+	for k := range s.subnets[subS] {
+		ip, cidr, err := net.ParseCIDR(k)
+		if err != nil {
+			return nil, err
+		}
+		cidr.IP = ip
+
+		ips = append(ips, cidr)
+	}
+
+	return ips, nil
 }
 
 // AllocateIP implements Store.
@@ -233,6 +292,9 @@ var (
 // A leaseStore is an in-memory Store implementation.
 type boltStore struct {
 	db *bbolt.DB
+
+	mu      sync.RWMutex
+	subnets map[string]*net.IPNet
 }
 
 // FileStore returns a Store which stores Leases in a file on disk.
@@ -261,7 +323,8 @@ func FileStore(file string) (Store, error) {
 	}
 
 	return &boltStore{
-		db: db,
+		db:      db,
+		subnets: make(map[string]*net.IPNet),
 	}, nil
 }
 
@@ -339,18 +402,31 @@ func (s *boltStore) DeleteLease(key uint64) error {
 // Purge implements Store.
 func (s *boltStore) Purge(t time.Time) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		// Track keys for removal after iteration completes.
-		var keys [][]byte
+		// Track lease keys and IP addresses for removal after iteration
+		// completes.
+		var (
+			leases [][]byte
+			freed  []*net.IPNet
+		)
 
-		b := tx.Bucket(bucketLeases)
-		err := b.ForEach(func(k, v []byte) error {
+		bLeases := tx.Bucket(bucketLeases)
+		err := bLeases.ForEach(func(k, v []byte) error {
 			var l Lease
 			if err := l.unmarshal(v); err != nil {
 				return err
 			}
 
-			if l.Expired(t) {
-				keys = append(keys, k)
+			if !l.Expired(t) {
+				return nil
+			}
+
+			leases = append(leases, k)
+
+			if l.IPv4 != nil {
+				freed = append(freed, l.IPv4)
+			}
+			if l.IPv6 != nil {
+				freed = append(freed, l.IPv6)
 			}
 
 			return nil
@@ -359,9 +435,30 @@ func (s *boltStore) Purge(t time.Time) error {
 			return err
 		}
 
-		for _, k := range keys {
-			if err := b.Delete(k); err != nil {
+		for _, l := range leases {
+			if err := bLeases.Delete(l); err != nil {
 				return err
+			}
+		}
+
+		// Now we must clear the associated addresses from the subnets bucket.
+		// Because the ForEach API cannot modify the bucket, we keep a separate
+		// list of subnets and iterate through each of their buckets to remove
+		// the IP keys that belong to those buckets.
+		//
+		// This could use some work, but it seems to work for now.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		bSubnets := tx.Bucket(bucketSubnets)
+		for _, sub := range s.subnets {
+			bSub := marshalIPNet(sub)
+			for _, f := range freed {
+				if sub.Contains(f.IP) {
+					if err := bSubnets.Bucket(bSub).Delete(marshalIPNet(f)); err != nil {
+						return err
+					}
+				}
 			}
 		}
 
@@ -394,10 +491,42 @@ func (s *boltStore) Subnets() ([]*net.IPNet, error) {
 
 // SaveSubnet implements Store.
 func (s *boltStore) SaveSubnet(sub *net.IPNet) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.subnets[sub.String()] = sub
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.Bucket(bucketSubnets).CreateBucketIfNotExists(marshalIPNet(sub))
 		return err
 	})
+}
+
+// AllocatedIPs implements Store.
+func (s *boltStore) AllocatedIPs(sub *net.IPNet) ([]*net.IPNet, error) {
+	var ips []*net.IPNet
+
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketSubnets).Bucket(marshalIPNet(sub))
+		if b == nil {
+			return fmt.Errorf("wgipam: no such subnet %q", sub)
+		}
+
+		return b.ForEach(func(k, _ []byte) error {
+			ip, err := unmarshalIPNet(k)
+			if err != nil {
+				return err
+			}
+
+			ips = append(ips, ip)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ips, nil
 }
 
 // SaveSubnet implements Store.

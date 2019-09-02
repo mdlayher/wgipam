@@ -227,25 +227,55 @@ func testDeleteLeaseOK(t *testing.T, s wgipam.Store) {
 func testPurgeOK(t *testing.T, s wgipam.Store) {
 	t.Helper()
 
+	if err := s.SaveSubnet(okSubnet4); err != nil {
+		t.Fatalf("failed to save subnet: %v", err)
+	}
+
+	ip4a, ip6a, err := wgipam.DualStackIPAllocator(s, []*net.IPNet{
+		okSubnet4, okSubnet6,
+	})
+	if err != nil {
+		t.Fatalf("failed to create IP allocator: %v", err)
+	}
+
 	// Leases start every 100 seconds and last 10 seconds.
 	const (
 		start  = 100
 		length = 10
 	)
 
-	var want []*wgipam.Lease
+	var want *wgipam.Lease
 	for i := 0; i < 3; i++ {
-		// Create leases which start at regular intervas.
-		l := *okLease
-		l.Start = time.Unix((int64(i)+1)*start, 0)
-		l.Length = length * time.Second
+		ip4, ok, err := ip4a.Allocate()
+		if err != nil {
+			t.Fatalf("failed to allocate IPv4: %v", err)
+		}
+		if !ok {
+			t.Fatal("ran out of IPv4 addresses")
+		}
+
+		ip6, ok, err := ip6a.Allocate()
+		if err != nil {
+			t.Fatalf("failed to allocate IPv6: %v", err)
+		}
+		if !ok {
+			t.Fatal("ran out of IPv6 addresses")
+		}
+
+		// Create leases which start at regular intervals.
+		l := &wgipam.Lease{
+			IPv4:   ip4,
+			IPv6:   ip6,
+			Start:  time.Unix((int64(i)+1)*start, 0),
+			Length: length * time.Second,
+		}
 
 		if i == 2 {
 			// Track final lease for later comparison.
-			want = []*wgipam.Lease{&l}
+			want = l
 		}
 
-		if err := s.SaveLease(uint64(i), &l); err != nil {
+		if err := s.SaveLease(uint64(i), l); err != nil {
 			t.Fatalf("failed to save lease: %v", err)
 		}
 	}
@@ -267,8 +297,26 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 		t.Fatalf("failed to get lease: %v", err)
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff([]*wgipam.Lease{want}, got); diff != "" {
 		t.Fatalf("unexpected Leases (-want +got):\n%s", diff)
+	}
+
+	ip4s, err := s.AllocatedIPs(okSubnet4)
+	if err != nil {
+		t.Fatalf("failed to get allocated IPv4s: %v", err)
+	}
+
+	if diff := cmp.Diff([]*net.IPNet{want.IPv4}, ip4s); diff != "" {
+		t.Fatalf("unexpected remaining IPv4 allocation (-want +got):\n%s", diff)
+	}
+
+	ip6s, err := s.AllocatedIPs(okSubnet6)
+	if err != nil {
+		t.Fatalf("failed to get allocated IPv6s: %v", err)
+	}
+
+	if diff := cmp.Diff([]*net.IPNet{want.IPv6}, ip6s); diff != "" {
+		t.Fatalf("unexpected remaining IPv6 allocation (-want +got):\n%s", diff)
 	}
 }
 
