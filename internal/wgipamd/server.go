@@ -163,17 +163,19 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 		return serve(srv.Serve(l))
 	})
 
-	// Purge expired leases at regular intervals.
+	// Purge expired leases immediately and also at regular intervals thereafter.
 	s.eg.Go(func() error {
 		tick := time.NewTicker(10 * time.Second)
+		t := time.Now()
 		for {
+			if err := store.Purge(t); err != nil {
+				logf("failed to purge expired data: %v", err)
+			}
+
 			select {
 			case <-ctx.Done():
 				return nil
-			case t := <-tick.C:
-				if err := store.Purge(t); err != nil {
-					logf("failed to purge expired data: %v", err)
-				}
+			case t = <-tick.C:
 			}
 		}
 	})
