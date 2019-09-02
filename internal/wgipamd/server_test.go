@@ -16,6 +16,7 @@ package wgipamd_test
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/mdlayher/promtest"
 	"github.com/mdlayher/wgdynamic-go"
 	"github.com/mdlayher/wgipam/internal/config"
 	"github.com/mdlayher/wgipam/internal/wgipamd"
@@ -111,24 +113,46 @@ func TestServerRun(t *testing.T) {
 					Name:    "lo",
 					Subnets: []*net.IPNet{localhost},
 				}},
+				Debug: config.Debug{
+					Address:    randAddr(t),
+					Prometheus: true,
+				},
 			},
 			fn: func(t *testing.T, cancel func(), srv, debug string) {
 				defer cancel()
 
-				// Debug listener should not be configured but the wg-dynamic
-				// server should be up and running.
-				if probeTCP(t, debug) {
-					t.Fatal("debug listener should not have started")
+				// Both servers should be up and running.
+				if !probeTCP(t, debug) {
+					t.Fatal("debug listener did not start")
 				}
 				if !probeTCP(t, srv) {
 					t.Fatal("wg-dynamic server did not start")
 				}
 
 				// Check the bare minimum functionality to ensure the server
-				// works and started successfully.
+				// works and started successfully. This will also populate
+				// some Prometheus metrics for validation.
 				res := requestIP(t, srv)
 				if diff := cmp.Diff(localhost, res.IPv6); diff != "" {
 					t.Fatalf("unexpected leased IPv6 address (-want +got):\n%s", diff)
+				}
+
+				prom := httpGet(t, debug+"/metrics")
+				defer prom.Body.Close()
+
+				if diff := cmp.Diff(http.StatusOK, prom.StatusCode); diff != "" {
+					t.Fatalf("unexpected Prometheus HTTP status (-want +got):\n%s", diff)
+				}
+
+				b, err := ioutil.ReadAll(prom.Body)
+				if err != nil {
+					t.Fatalf("failed to read Prometheus metrics: %v", err)
+				}
+
+				// Validate the necessary metrics.
+				// TODO(mdlayher): check for a whitelist of known metrics.
+				if !promtest.Lint(t, b) {
+					t.Fatal("Prometheus metrics are not lint-clean")
 				}
 			},
 		},
