@@ -86,6 +86,10 @@ func TestStore(t *testing.T, ms MakeStore) {
 			fn:   testSubnetsOK,
 		},
 		{
+			name: "allocated IPs no subnet",
+			fn:   testAllocatedIPsNoSubnet,
+		},
+		{
 			name: "allocate IP mismatched subnet",
 			fn:   testAllocateIPMismatchedSubnet,
 		},
@@ -358,6 +362,14 @@ func testSubnetsOK(t *testing.T, s wgipam.Store) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("unexpected Subnets (-want +got):\n%s", diff)
+	}
+}
+
+func testAllocatedIPsNoSubnet(t *testing.T, s wgipam.Store) {
+	t.Helper()
+
+	if _, err := s.AllocatedIPs(okSubnet4); err == nil {
+		t.Fatal("expected no such subnet error, but none occurred")
 	}
 }
 
