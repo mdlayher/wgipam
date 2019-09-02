@@ -77,7 +77,12 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 
+		// Guard s.wg to prevent a data race when another goroutine tries to
+		// wait during a call to Close.
+		s.mu.Lock()
 		s.wg.Add(1)
+		s.mu.Unlock()
+
 		go func() {
 			defer func() {
 				// The C implementation immediately closes the connection once

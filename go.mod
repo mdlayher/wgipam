@@ -5,7 +5,7 @@ go 1.12
 require (
 	github.com/google/go-cmp v0.3.1
 	github.com/kr/pretty v0.1.0 // indirect
-	github.com/mdlayher/wgdynamic-go v0.0.0-20190829234024-3a9573493892
+	github.com/mdlayher/wgdynamic-go v0.0.0-20190902155622-cc7063a87744
 	github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
