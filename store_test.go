@@ -23,17 +23,8 @@ import (
 )
 
 func TestStore(t *testing.T) {
-	// Set up a temporary directory for bolt database files which will also
-	// be destroyed at the end of the test.
-	dir, err := ioutil.TempDir("", "wgipamd-lease-store-test")
-	if err != nil {
-		t.Fatalf("failed to make temporary directory: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Fatalf("failed to clean up temporary directory: %v", err)
-		}
-	}()
+	mfs, done := makeFileStore(t)
+	defer done()
 
 	tests := []struct {
 		name string
@@ -47,22 +38,7 @@ func TestStore(t *testing.T) {
 		},
 		{
 			name: "file",
-			mls: func(t *testing.T) wgipam.Store {
-				// Create a random temporary file in the temporary directory
-				// and use it as our file store.
-				f, err := ioutil.TempFile(dir, "file.db")
-				if err != nil {
-					t.Fatalf("failed to create temporary file: %v", err)
-				}
-				_ = f.Close()
-
-				ls, err := wgipam.FileStore(f.Name())
-				if err != nil {
-					t.Fatalf("failed to create file lease store: %v", err)
-				}
-
-				return ls
-			},
+			mls:  mfs,
 		},
 	}
 
@@ -70,5 +46,41 @@ func TestStore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			wgipamtest.TestStore(t, tt.mls)
 		})
+	}
+}
+
+func makeFileStore(t *testing.T) (wgipamtest.MakeStore, func()) {
+	t.Helper()
+
+	// Set up a temporary directory for files which will also be destroyed at
+	// the end of the test.
+	dir, err := ioutil.TempDir("", "wgipamtest-file")
+	if err != nil {
+		t.Fatalf("failed to make temporary directory: %v", err)
+	}
+
+	mls := func(t *testing.T) wgipam.Store {
+		t.Helper()
+
+		// For each invocation, create a random temporary file in the temporary
+		// directory and use it as our file store.
+		f, err := ioutil.TempFile(dir, "file.db")
+		if err != nil {
+			t.Fatalf("failed to create temporary file: %v", err)
+		}
+		_ = f.Close()
+
+		s, err := wgipam.FileStore(f.Name())
+		if err != nil {
+			t.Fatalf("failed to create file store: %v", err)
+		}
+
+		return s
+	}
+
+	return mls, func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatalf("failed to clean up temporary directory: %v", err)
+		}
 	}
 }
