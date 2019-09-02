@@ -447,8 +447,8 @@ func (s *boltStore) Purge(t time.Time) error {
 		// the IP keys that belong to those buckets.
 		//
 		// This could use some work, but it seems to work for now.
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mu.RLock()
+		defer s.mu.RUnlock()
 
 		bSubnets := tx.Bucket(bucketSubnets)
 		for _, sub := range s.subnets {
