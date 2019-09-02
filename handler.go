@@ -299,3 +299,7 @@ func (h *Handler) metrics(fn func()) {
 
 	fn()
 }
+
+func panicf(format string, a ...interface{}) {
+	panic(fmt.Sprintf(format, a...))
+}

@@ -14,7 +14,6 @@
 package wgipam_test
 
 import (
-	"fmt"
 	"net"
 	"testing"
 
@@ -24,8 +23,8 @@ import (
 )
 
 var (
-	sub4 = mustCIDR("192.0.2.0/30")
-	sub6 = mustCIDR("2001:db8::/126")
+	sub4 = wgipam.MustCIDR("192.0.2.0/30")
+	sub6 = wgipam.MustCIDR("2001:db8::/126")
 )
 
 func TestDualStackIPAllocator(t *testing.T) {
@@ -220,7 +219,7 @@ func TestIPAllocatorFree(t *testing.T) {
 			subnets: []*net.IPNet{sub4},
 			alloc: func(_ *testing.T, _ wgipam.IPAllocator) *net.IPNet {
 				// Allocate a random address outside of sub4.
-				return mustCIDR("192.0.2.1/32")
+				return wgipam.MustCIDR("192.0.2.1/32")
 			},
 			ok: true,
 		},
@@ -259,17 +258,4 @@ func TestIPAllocatorFree(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustCIDR(s string) *net.IPNet {
-	_, ipn, err := net.ParseCIDR(s)
-	if err != nil {
-		panicf("failed to parse CIDR: %v", err)
-	}
-
-	return ipn
-}
-
-func panicf(format string, a ...interface{}) {
-	panic(fmt.Sprintf(format, a...))
 }

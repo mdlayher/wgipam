@@ -13,7 +13,10 @@
 
 package wgipam
 
-import "time"
+import (
+	"net"
+	"time"
+)
 
 // Functions in this file should only be exported for use in tests.
 
@@ -22,3 +25,13 @@ func TimeNow() time.Time { return timeNow() }
 
 // StrKey wraps strKey.
 func StrKey(s string) uint64 { return strKey(s) }
+
+// MustCIDR parses s as a *net.IPNet or panics.
+func MustCIDR(s string) *net.IPNet {
+	_, ipn, err := net.ParseCIDR(s)
+	if err != nil {
+		panicf("failed to parse CIDR: %v", err)
+	}
+
+	return ipn
+}

@@ -15,6 +15,7 @@ package wgipam_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -28,8 +29,8 @@ import (
 
 func TestHandlerRequestIP(t *testing.T) {
 	var (
-		sub4 = mustCIDR("192.0.2.0/32")
-		sub6 = mustCIDR("2001:db8::/128")
+		sub4 = wgipam.MustCIDR("192.0.2.0/32")
+		sub6 = wgipam.MustCIDR("2001:db8::/128")
 
 		errOutOfIPs = &wgdynamic.Error{
 			Number:  1,
@@ -149,7 +150,7 @@ func TestHandlerRequestIP(t *testing.T) {
 					l := &wgipam.Lease{
 						// Use an address that will not be allocated by our
 						// configuration and verify it is removed.
-						IPv4:   mustCIDR("192.0.2.255/32"),
+						IPv4:   wgipam.MustCIDR("192.0.2.255/32"),
 						Start:  time.Unix(1, 0),
 						Length: 10 * time.Second,
 					}
@@ -284,4 +285,8 @@ func testClient(t *testing.T, h *wgipam.Handler) (*wgdynamic.Client, func()) {
 			t.Fatalf("failed to close server listener: %v", err)
 		}
 	}
+}
+
+func panicf(format string, a ...interface{}) {
+	panic(fmt.Sprintf(format, a...))
 }

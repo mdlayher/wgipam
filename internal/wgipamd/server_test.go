@@ -86,7 +86,8 @@ func TestServerRun(t *testing.T) {
 			fn: func(t *testing.T, cancel func(), _, debug string) {
 				defer cancel()
 
-				// Debug listener should start with all endpoints available.
+				// Debug listener should start with both configured endpoints
+				// available.
 				if !probeTCP(t, debug) {
 					t.Fatal("debug listener did not start")
 				}

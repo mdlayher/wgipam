@@ -20,7 +20,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/pprof"
 	"strings"
 	"time"
 
@@ -28,7 +27,6 @@ import (
 	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/config"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,12 +77,8 @@ func (s *Server) Ready() <-chan struct{} { return s.ready }
 
 // Run runs the wgipamd server until the context is canceled.
 func (s *Server) Run(ctx context.Context) error {
-	// Configure the HTTP debug server, if applicable.
-	if err := s.runDebug(ctx); err != nil {
-		return fmt.Errorf("failed to start debug HTTP server: %v", err)
-	}
-
 	// Serve on each specified interface.
+	stores := make(map[string]wgipam.Store)
 	for _, ifi := range s.cfg.Interfaces {
 		// Configure storage based on the input configuration and then start
 		// the wg-dynamic server for this interface.
@@ -94,9 +88,18 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		defer store.Close()
 
+		// Track the store for each interface so it can be used in the debug
+		// server HTTP API.
+		stores[ifi.Name] = store
+
 		if err := s.runServer(ctx, ifi, store); err != nil {
 			return fmt.Errorf("failed to run wg-dynamic server: %v", err)
 		}
+	}
+
+	// Configure the HTTP debug server, if applicable.
+	if err := s.runDebug(ctx, stores); err != nil {
+		return fmt.Errorf("failed to start debug HTTP server: %v", err)
 	}
 
 	// Indicate readiness to any waiting callers, and then wwait for all
@@ -184,7 +187,7 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 }
 
 // runDebug runs a debug HTTP server using goroutines, until ctx is canceled.
-func (s *Server) runDebug(ctx context.Context) error {
+func (s *Server) runDebug(ctx context.Context, stores map[string]wgipam.Store) error {
 	d := s.cfg.Debug
 	if d.Address == "" {
 		// Nothing to do, don't start the server.
@@ -197,7 +200,7 @@ func (s *Server) runDebug(ctx context.Context) error {
 		return fmt.Errorf("failed to start debug listener: %v", err)
 	}
 
-	s.ll.Printf("starting debug listener on %q: prometheus: %v, pprof: %v",
+	s.ll.Printf("starting HTTP debug listener on %q: prometheus: %v, pprof: %v",
 		d.Address, d.Prometheus, d.PProf)
 
 	// Serve requests until the context is canceled.
@@ -207,21 +210,9 @@ func (s *Server) runDebug(ctx context.Context) error {
 	})
 
 	s.eg.Go(func() error {
-		mux := http.NewServeMux()
-
-		if d.Prometheus {
-			mux.Handle("/metrics", promhttp.HandlerFor(s.reg, promhttp.HandlerOpts{}))
-		}
-
-		if d.PProf {
-			mux.HandleFunc("/debug/pprof/", pprof.Index)
-			mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-			mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-			mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-			mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		}
-
-		return serve(http.Serve(l, mux))
+		return serve(http.Serve(
+			l, wgipam.NewHTTPHandler(d.Prometheus, d.PProf, s.reg, stores),
+		))
 	})
 
 	return nil
