@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 
 	"github.com/mikioh/ipaddr"
@@ -155,11 +154,6 @@ func Parse(r io.Reader) (*Config, error) {
 	}
 
 	return c, nil
-}
-
-// WriteDefault writes out the Default configuration to path.
-func WriteDefault(path string) error {
-	return ioutil.WriteFile(path, []byte(Default), 0644)
 }
 
 // parseStorage parses a raw storage configuration into a Storage structure.

@@ -25,6 +25,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -48,7 +49,7 @@ func main() {
 	ll := log.New(os.Stderr, "", log.LstdFlags)
 
 	if *initFlag {
-		if err := config.WriteDefault(cfgFile); err != nil {
+		if err := ioutil.WriteFile(cfgFile, []byte(config.Default), 0644); err != nil {
 			ll.Fatalf("failed to write default configuration: %v", err)
 		}
 
