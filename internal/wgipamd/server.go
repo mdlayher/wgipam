@@ -42,6 +42,11 @@ type Server struct {
 
 	eg    *errgroup.Group
 	ready chan struct{}
+
+	// TestListener is an optional hook that replaces the wg-dynamic server
+	// listener with the net.Listener created by this function. If nil, the
+	// wg-dynamic default listener is used.
+	TestListener func() (net.Listener, error)
 }
 
 // NewServer creates a Server with the input configuration and logger. If ll
@@ -107,8 +112,17 @@ func (s *Server) Run(ctx context.Context) error {
 // runServer runs a wg-dynamic server for a single interface using goroutines,
 // until ctx is canceled.
 func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgipam.Store) error {
-	// TODO(mdlayher): add test hook for arbitrary net.Listener.
-	l, err := wgdynamic.Listen(ifi.Name)
+	var (
+		l   net.Listener
+		err error
+	)
+
+	// Use the default listener unless a test listener is configured.
+	if s.TestListener == nil {
+		l, err = wgdynamic.Listen(ifi.Name)
+	} else {
+		l, err = s.TestListener()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to listen on %q: %v", ifi.Name, err)
 	}

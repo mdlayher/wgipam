@@ -15,6 +15,7 @@ package wgipamd_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,12 +24,15 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/mdlayher/wgdynamic-go"
 	"github.com/mdlayher/wgipam/internal/config"
 	"github.com/mdlayher/wgipam/internal/wgipamd"
 	"golang.org/x/sync/errgroup"
 )
 
 func TestServerRun(t *testing.T) {
+	localhost := mustCIDR("::1/128")
+
 	tests := []struct {
 		name string
 		cfg  config.Config
@@ -97,6 +101,37 @@ func TestServerRun(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "server OK",
+			cfg: config.Config{
+				Storage: config.Storage{
+					Memory: true,
+				},
+				Interfaces: []config.Interface{{
+					Name:    "lo",
+					Subnets: []*net.IPNet{localhost},
+				}},
+			},
+			fn: func(t *testing.T, cancel func(), srv, debug string) {
+				defer cancel()
+
+				// Debug listener should not be configured but the wg-dynamic
+				// server should be up and running.
+				if probeTCP(t, debug) {
+					t.Fatal("debug listener should not have started")
+				}
+				if !probeTCP(t, srv) {
+					t.Fatal("wg-dynamic server did not start")
+				}
+
+				// Check the bare minimum functionality to ensure the server
+				// works and started successfully.
+				res := requestIP(t, srv)
+				if diff := cmp.Diff(localhost, res.IPv6); diff != "" {
+					t.Fatalf("unexpected leased IPv6 address (-want +got):\n%s", diff)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +141,29 @@ func TestServerRun(t *testing.T) {
 
 			s := wgipamd.NewServer(tt.cfg, nil)
 
+			var (
+				srv   string
+				debug = tt.cfg.Debug.Address
+			)
+
+			// If an interface is configured, install the TestListener hook
+			// so we can probe the wg-dynamic server.
+			if len(tt.cfg.Interfaces) > 0 {
+				s.TestListener = func() (net.Listener, error) {
+					// Explicitly bind to IPv6 localhost as the wgdynamic
+					// client library makes some assumptions about use of IPv6,
+					// as does the wg-dynamic protocol.
+					l, err := net.Listen("tcp6", "[::1]:0")
+					if err != nil {
+						return nil, err
+					}
+
+					// Capture the address so we can probe it later.
+					srv = l.Addr().String()
+					return l, nil
+				}
+			}
+
 			var eg errgroup.Group
 			eg.Go(func() error {
 				return s.Run(ctx)
@@ -113,10 +171,6 @@ func TestServerRun(t *testing.T) {
 
 			// Ensure the server has time to fully set up before we run tests.
 			<-s.Ready()
-
-			// TODO(mdlayher): test wg-dynamic server.
-			srv := ""
-			debug := tt.cfg.Debug.Address
 
 			if tt.fn == nil {
 				// If no function specified, just cancel the server immediately.
@@ -130,10 +184,10 @@ func TestServerRun(t *testing.T) {
 			}
 
 			// All services should be stopped.
-			if srv != "" && probeTCP(t, srv) {
+			if probeTCP(t, srv) {
 				t.Fatal("wg-dynamic server still running")
 			}
-			if debug != "" && probeTCP(t, debug) {
+			if probeTCP(t, debug) {
 				t.Fatal("debug server still running")
 			}
 		})
@@ -142,6 +196,12 @@ func TestServerRun(t *testing.T) {
 
 func probeTCP(t *testing.T, addr string) bool {
 	t.Helper()
+
+	// As a convenience, if the address is empty, we know that the service
+	// cannot be probed.
+	if addr == "" {
+		return false
+	}
 
 	c, err := net.Dial("tcp", addr)
 	if err == nil {
@@ -177,6 +237,29 @@ func httpGet(t *testing.T, addr string) *http.Response {
 	return res
 }
 
+func requestIP(t *testing.T, addr string) *wgdynamic.RequestIP {
+	t.Helper()
+
+	taddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatalf("failed to resolve address: %v", err)
+	}
+
+	c := &wgdynamic.Client{
+		RemoteAddr: taddr,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	res, err := c.RequestIP(ctx, nil)
+	if err != nil {
+		t.Fatalf("failed to request IP: %v", err)
+	}
+
+	return res
+}
+
 func randAddr(t *testing.T) string {
 	t.Helper()
 
@@ -187,4 +270,17 @@ func randAddr(t *testing.T) string {
 	_ = l.Close()
 
 	return l.Addr().String()
+}
+
+func mustCIDR(s string) *net.IPNet {
+	_, ipn, err := net.ParseCIDR(s)
+	if err != nil {
+		panicf("failed to parse CIDR: %v", err)
+	}
+
+	return ipn
+}
+
+func panicf(format string, a ...interface{}) {
+	panic(fmt.Sprintf(format, a...))
 }
