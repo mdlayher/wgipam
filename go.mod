@@ -6,7 +6,7 @@ require (
 	github.com/google/go-cmp v0.3.1
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mdlayher/promtest v0.0.0-20190902162024-2b6f8ce579e3
-	github.com/mdlayher/wgdynamic-go v0.0.0-20190902155622-cc7063a87744
+	github.com/mdlayher/wgdynamic-go v0.0.0-20190903143450-a2fe411d169f
 	github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721
 	github.com/prometheus/client_golang v1.1.0
 	github.com/zeebo/xxh3 v0.0.0-20190829032042-2e75bc3ac09d

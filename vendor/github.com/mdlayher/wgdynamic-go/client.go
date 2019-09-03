@@ -22,8 +22,11 @@ var serverIP = &net.IPNet{
 // Most callers should construct a client using NewClient, which will bind to
 // well-known addresses for wg-dynamic communications.
 type Client struct {
-	// The local and remote TCP addresses for client/server communication.
-	LocalAddr, RemoteAddr *net.TCPAddr
+	// Dial specifies an optional function used to dial an arbitrary net.Conn
+	// connection to a predetermined wg-dynamic server. This is only necessary
+	// when using a net.Conn transport other than *net.TCPConn, and most callers
+	// should use NewClient to construct a Client instead.
+	Dial func(ctx context.Context) (net.Conn, error)
 }
 
 // NewClient creates a new Client bound to the specified WireGuard interface.
@@ -56,15 +59,24 @@ func newClient(iface string, addrs []net.Addr) (*Client, error) {
 	// Client will listen on a well-known port and send requests to the
 	// well-known server address.
 	return &Client{
-		LocalAddr: &net.TCPAddr{
-			IP:   llip.IP,
-			Port: port,
-			Zone: iface,
-		},
-		RemoteAddr: &net.TCPAddr{
-			IP:   serverIP.IP,
-			Port: port,
-			Zone: iface,
+		// By default, use the stdlib net.Dialer type.
+		Dial: func(ctx context.Context) (net.Conn, error) {
+			d := &net.Dialer{
+				// The server expects the client to be bound to a specific
+				// local address.
+				LocalAddr: &net.TCPAddr{
+					IP:   llip.IP,
+					Port: port,
+					Zone: iface,
+				},
+			}
+
+			// wg-dynamic TCP connections always use IPv6.
+			return d.DialContext(ctx, "tcp6", (&net.TCPAddr{
+				IP:   serverIP.IP,
+				Port: port,
+				Zone: iface,
+			}).String())
 		},
 	}, nil
 }
@@ -121,9 +133,7 @@ var deadlineNow = time.Unix(1, 0)
 
 // execute executes fn with a network connection backing rw.
 func (c *Client) execute(ctx context.Context, fn func(rw io.ReadWriter) error) error {
-	// The server expects the client to be bound to a specific local address.
-	d := &net.Dialer{LocalAddr: c.LocalAddr}
-	conn, err := d.DialContext(ctx, "tcp6", c.RemoteAddr.String())
+	conn, err := c.Dial(ctx)
 	if err != nil {
 		return err
 	}
