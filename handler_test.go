@@ -275,7 +275,10 @@ func testClient(t *testing.T, h *wgipam.Handler) (*wgdynamic.Client, func()) {
 	}()
 
 	c := &wgdynamic.Client{
-		RemoteAddr: l.Addr().(*net.TCPAddr),
+		Dial: func(ctx context.Context) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", l.Addr().String())
+		},
 	}
 
 	return c, func() {
