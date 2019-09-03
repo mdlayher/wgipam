@@ -271,7 +271,10 @@ func requestIP(t *testing.T, addr string) *wgdynamic.RequestIP {
 	}
 
 	c := &wgdynamic.Client{
-		RemoteAddr: taddr,
+		Dial: func(ctx context.Context) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", taddr.String())
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
