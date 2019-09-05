@@ -24,6 +24,8 @@ import (
 )
 
 func TestParse(t *testing.T) {
+	t.Parallel()
+
 	okInterfaces := []config.Interface{{
 		Name:    "wg0",
 		Subnets: []*net.IPNet{mustCIDR("192.0.2.0/24")},
@@ -194,7 +196,10 @@ interfaces:
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			c, err := config.Parse(strings.NewReader(tt.s))
 			if tt.ok && err != nil {
 				t.Fatalf("failed to parse config: %v", err)

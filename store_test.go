@@ -23,6 +23,8 @@ import (
 )
 
 func TestStore(t *testing.T) {
+	t.Parallel()
+
 	mfs, done := makeFileStore(t)
 	defer done()
 
@@ -43,6 +45,9 @@ func TestStore(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		// TODO(mdlayher): figure out how to parallelize this while also
+		// cleaning up FileStore state.
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			wgipamtest.TestStore(t, tt.mls)
 		})

@@ -28,6 +28,8 @@ var (
 )
 
 func TestDualStackIPAllocator(t *testing.T) {
+	t.Parallel()
+
 	contains := func(t *testing.T, ips wgipam.IPAllocator, sub *net.IPNet) {
 		t.Helper()
 
@@ -91,7 +93,10 @@ func TestDualStackIPAllocator(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ip4s, ip6s, err := wgipam.DualStackIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if tt.ok && err != nil {
 				t.Fatalf("failed to create IPAllocators: %v", err)
@@ -109,6 +114,8 @@ func TestDualStackIPAllocator(t *testing.T) {
 }
 
 func TestIPAllocatorAllocate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		subnets []*net.IPNet
@@ -157,7 +164,10 @@ func TestIPAllocatorAllocate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if tt.ok && err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)
@@ -208,6 +218,8 @@ func TestIPAllocatorAllocate(t *testing.T) {
 }
 
 func TestIPAllocatorFree(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		subnets []*net.IPNet
@@ -243,7 +255,10 @@ func TestIPAllocatorFree(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)

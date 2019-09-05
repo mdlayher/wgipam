@@ -26,6 +26,8 @@ import (
 )
 
 func TestHTTPHandler(t *testing.T) {
+	t.Parallel()
+
 	l := &Lease{
 		IPv4:   MustCIDR("192.0.2.0/32"),
 		IPv6:   MustCIDR("2001:db8::/128"),
@@ -69,7 +71,10 @@ func TestHTTPHandler(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			srv := httptest.NewServer(NewHTTPHandler(
 				true, true, prometheus.NewRegistry(), map[string]Store{
 					"wg0": store,

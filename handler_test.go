@@ -28,6 +28,8 @@ import (
 )
 
 func TestHandlerRequestIP(t *testing.T) {
+	t.Parallel()
+
 	var (
 		sub4 = wgipam.MustCIDR("192.0.2.0/32")
 		sub6 = wgipam.MustCIDR("2001:db8::/128")
@@ -167,7 +169,10 @@ func TestHandlerRequestIP(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			c, done := testClient(t, tt.h)
 			defer done()
 
