@@ -25,32 +25,43 @@ import (
 func TestStore(t *testing.T) {
 	t.Parallel()
 
-	mfs, done := makeFileStore(t)
-	defer done()
+	mfs, mfsDone := makeFileStore(t)
 
 	tests := []struct {
 		name string
-		mls  wgipamtest.MakeStore
+		ms   wgipamtest.MakeStore
+		done func()
 	}{
 		{
 			name: "memory",
-			mls: func(_ *testing.T) wgipam.Store {
+			ms: func(_ *testing.T) wgipam.Store {
 				return wgipam.MemoryStore()
 			},
 		},
 		{
 			name: "file",
-			mls:  mfs,
+			ms:   mfs,
+			done: mfsDone,
 		},
 	}
 
 	for _, tt := range tests {
-		// TODO(mdlayher): figure out how to parallelize this while also
-		// cleaning up FileStore state.
 		tt := tt
+
+		// The outer t.Run scope is necessary in order to manage concurrency
+		// appropriately while running parallel tests within the inner scope.
+		// This way, cleanup functions are only invoked once all of the
+		// goroutines running tests in parallel are complete.
 		t.Run(tt.name, func(t *testing.T) {
-			wgipamtest.TestStore(t, tt.mls)
+			t.Run(" ", func(t *testing.T) {
+				t.Parallel()
+				wgipamtest.TestStore(t, tt.ms)
+			})
 		})
+
+		if tt.done != nil {
+			tt.done()
+		}
 	}
 }
 
@@ -64,7 +75,7 @@ func makeFileStore(t *testing.T) (wgipamtest.MakeStore, func()) {
 		t.Fatalf("failed to make temporary directory: %v", err)
 	}
 
-	mls := func(t *testing.T) wgipam.Store {
+	ms := func(t *testing.T) wgipam.Store {
 		t.Helper()
 
 		// For each invocation, create a random temporary file in the temporary
@@ -83,7 +94,7 @@ func makeFileStore(t *testing.T) (wgipamtest.MakeStore, func()) {
 		return s
 	}
 
-	return mls, func() {
+	return ms, func() {
 		if err := os.RemoveAll(dir); err != nil {
 			t.Fatalf("failed to clean up temporary directory: %v", err)
 		}
