@@ -106,7 +106,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to start debug HTTP server: %v", err)
 	}
 
-	// Indicate readiness to any waiting callers, and then wwait for all
+	// Indicate readiness to any waiting callers, and then wait for all
 	// goroutines to be canceled and stopped successfully.
 	close(s.ready)
 	if err := s.eg.Wait(); err != nil {
