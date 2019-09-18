@@ -25,12 +25,12 @@ import (
 func TestStore(t *testing.T) {
 	t.Parallel()
 
-	mfs, mfsDone := makeFileStore(t)
+	mfs, done := makeFileStore(t)
+	defer done()
 
 	tests := []struct {
 		name string
 		ms   wgipamtest.MakeStore
-		done func()
 	}{
 		{
 			name: "memory",
@@ -41,7 +41,6 @@ func TestStore(t *testing.T) {
 		{
 			name: "file",
 			ms:   mfs,
-			done: mfsDone,
 		},
 	}
 
@@ -58,10 +57,6 @@ func TestStore(t *testing.T) {
 				wgipamtest.TestStore(t, tt.ms)
 			})
 		})
-
-		if tt.done != nil {
-			tt.done()
-		}
 	}
 }
 
