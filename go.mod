@@ -9,9 +9,12 @@ require (
 	github.com/mdlayher/wgdynamic-go v0.0.0-20190903143450-a2fe411d169f
 	github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721
 	github.com/prometheus/client_golang v1.1.0
-	github.com/zeebo/xxh3 v0.0.0-20190829032042-2e75bc3ac09d
+	github.com/prometheus/common v0.7.0 // indirect
+	github.com/prometheus/procfs v0.0.5 // indirect
+	github.com/zeebo/xxh3 v0.0.0-20190923153500-83a7230063d0
 	go.etcd.io/bbolt v1.3.3
-	golang.org/x/sync v0.0.0-20190423024810-112230192c58
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
+	golang.org/x/sys v0.0.0-20190922100055-0a153f010e69 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20190709130402-674ba3eaed22
+	gopkg.in/yaml.v3 v3.0.0-20190905181640-827449938966
 )
