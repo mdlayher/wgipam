@@ -274,3 +274,35 @@ func TestIPAllocatorFree(t *testing.T) {
 		})
 	}
 }
+
+func TestSimpleIPAllocatorAllocateLoop(t *testing.T) {
+	t.Parallel()
+
+	sub := wgipam.MustCIDR("192.0.2.0/30")
+
+	ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), []*net.IPNet{sub})
+	if err != nil {
+		t.Fatalf("failed to create IPAllocator: %v", err)
+	}
+
+	// Loop through the /30 and keep allocating and freeing addresses. The
+	// internal cursor should continue looping and handing out addresses which
+	// are free at the beginning of the subnet.
+	for i := 0; i < 16; i++ {
+		ip, ok, err := ipa.Allocate()
+		if err != nil {
+			t.Fatalf("failed to allocate IPs: %v", err)
+		}
+		if !ok {
+			t.Fatal("ran out of IPs")
+		}
+
+		if diff := cmp.Diff(i%4, int(ip.IP.To4()[3])); diff != "" {
+			t.Fatalf("unexpected final IP address octet (-want +got):\n%s", diff)
+		}
+
+		if err := ipa.Free(ip); err != nil {
+			t.Fatalf("failed to free IP address: %v", err)
+		}
+	}
+}

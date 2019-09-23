@@ -46,7 +46,6 @@ type simpleIPAllocator struct {
 	s       Store
 	mu      sync.Mutex
 	c       *ipaddr.Cursor
-	out     bool
 	subnets []*net.IPNet
 }
 
@@ -127,16 +126,20 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var out bool
 	for {
-		if s.out {
-			// No more addresses to provide.
-			return nil, false, nil
-		}
-
 		p := s.c.Pos()
 		if s.c.Next() == nil {
-			// We've reached the end of the cursor; no more IPs.
-			s.out = true
+			if out {
+				// No more addresses to provide.
+				return nil, false, nil
+			}
+
+			// We've reached the end of the cursor, seek back to the beginning.
+			if err := s.c.Set(s.c.First()); err != nil {
+				return nil, false, err
+			}
+			out = true
 		}
 
 		// Try to allocate this address. If unsuccessful, the loop will continue
