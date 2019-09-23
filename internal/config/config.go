@@ -29,7 +29,8 @@ const Default = `---
 #
 # If none specified, ephemeral in-memory storage will be used.
 storage:
-  file: "wgipamd.db"
+  # Store data files within the specified folder.
+  file: "/var/lib/wgipamd"
 # Specify one or more WireGuard interfaces to listen on for IP
 # assignment requests.
 interfaces:

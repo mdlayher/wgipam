@@ -176,7 +176,7 @@ interfaces:
 			s:    config.Default,
 			c: &config.Config{
 				Storage: config.Storage{
-					File: "wgipamd.db",
+					File: "/var/lib/wgipamd",
 				},
 				Interfaces: []config.Interface{{
 					Name: "wg0",

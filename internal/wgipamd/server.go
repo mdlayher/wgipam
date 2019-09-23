@@ -20,6 +20,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -230,7 +231,7 @@ func newStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.Store, error
 		ll.Println("using ephemeral in-memory storage")
 		return wgipam.MemoryStore(), nil
 	case s.File != "":
-		file := fmt.Sprintf("%s-%s", ifi, s.File)
+		file := filepath.Join(s.File, fmt.Sprintf("wgipamd-%s.db", ifi))
 		ll.Printf("using file %q storage", file)
 		return wgipam.FileStore(file)
 	default:
