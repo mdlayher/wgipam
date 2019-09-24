@@ -87,6 +87,36 @@ interfaces:
 `,
 		},
 		{
+			name: "bad IP range",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - 192.0.2.1-192.0.2.2-192.0.2.3
+`,
+		},
+		{
+			name: "bad IP range first",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - foo-192.0.2.10
+`,
+		},
+		{
+			name: "bad IP range last",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - 192.0.2.1-bar
+`,
+		},
+		{
 			name: "bad no subnets",
 			s: `
 ---
@@ -168,6 +198,30 @@ interfaces:
 					Memory: true,
 				},
 				Interfaces: okInterfaces,
+			},
+			ok: true,
+		},
+		{
+			name: "OK IP range",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - "192.0.2.1-192.0.2.5"
+`,
+			c: &config.Config{
+				Storage: config.Storage{
+					Memory: true,
+				},
+				Interfaces: []config.Interface{{
+					Name: "wg0",
+					Subnets: []*net.IPNet{
+						mustCIDR("192.0.2.1/32"),
+						mustCIDR("192.0.2.2/31"),
+						mustCIDR("192.0.2.4/31"),
+					},
+				}},
 			},
 			ok: true,
 		},

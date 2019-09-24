@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 
 	"github.com/mikioh/ipaddr"
 	"gopkg.in/yaml.v3"
@@ -39,6 +40,9 @@ interfaces:
     subnets:
       - "192.0.2.0/24"
       - "2001:db8::/64"
+      # In addition to CIDR notation, IP ranges are also supported.
+      # - "192.0.2.0-192.0.2.100"
+      # - "2001:db8::-2001:db8::100"
 # Enable or disable the debug HTTP server for facilities such as Prometheus
 # metrics and pprof support.
 #
@@ -136,12 +140,12 @@ func Parse(r io.Reader) (*Config, error) {
 
 		subnets := make([]*net.IPNet, 0, len(ifi.Subnets))
 		for _, s := range ifi.Subnets {
-			ipn, err := parseCIDR(s)
+			subs, err := parseCIDR(s)
 			if err != nil {
 				return nil, handle(err)
 			}
 
-			subnets = append(subnets, ipn)
+			subnets = append(subnets, subs...)
 		}
 
 		if err := checkSubnets(subnets); err != nil {
@@ -166,17 +170,49 @@ func parseStorage(s storage) (*Storage, error) {
 	return &Storage{File: s.File}, nil
 }
 
-// parseCIDR parses s as a *net.IPNet and verifies it refers to a subnet.
-func parseCIDR(s string) (*net.IPNet, error) {
-	ip, ipn, err := net.ParseCIDR(s)
-	if err != nil {
-		return nil, err
-	}
-	if !ip.Equal(ipn.IP) {
-		return nil, fmt.Errorf("must specify a subnet, not an individual IP address: %s", s)
+// parseCIDR parses s as []*net.IPNet and verifies that it refers to one or
+// more subnets.
+func parseCIDR(s string) ([]*net.IPNet, error) {
+	// Is this a CIDR prefix or an IP range?
+	if !strings.Contains(s, "-") {
+		ip, ipn, err := net.ParseCIDR(s)
+		if err != nil {
+			return nil, err
+		}
+
+		if !ip.Equal(ipn.IP) {
+			return nil, fmt.Errorf("must specify a subnet, not an individual IP address: %s", s)
+		}
+
+		return []*net.IPNet{ipn}, nil
 	}
 
-	return ipn, err
+	// Parse a range in the format "first-last".
+	ips := strings.Split(s, "-")
+	if len(ips) != 2 {
+		return nil, fmt.Errorf("invalid IP address range %q", s)
+	}
+
+	first := net.ParseIP(ips[0])
+	if first == nil {
+		return nil, fmt.Errorf("invalid IP address range %q: invalid start IP: %q", s, ips[0])
+	}
+
+	last := net.ParseIP(ips[1])
+	if last == nil {
+		return nil, fmt.Errorf("invalid IP address range %q: invalid end IP: %q", s, ips[1])
+	}
+
+	// Summarize the prefixes in the range and return them for server use.
+	var subnets []*net.IPNet
+	for _, p := range ipaddr.Summarize(first, last) {
+		subnets = append(subnets, &net.IPNet{
+			IP:   p.IP,
+			Mask: p.Mask,
+		})
+	}
+
+	return subnets, nil
 }
 
 // checkSubnets verifies the validity of subnets.
