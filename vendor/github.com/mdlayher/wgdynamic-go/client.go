@@ -69,6 +69,10 @@ func newClient(iface string, addrs []net.Addr) (*Client, error) {
 					Port: port,
 					Zone: iface,
 				},
+				// On Linux, pass SO_REUSEPORT to prevent a nuisance error about
+				// the port being in use when the client makes a few calls
+				// in succession.
+				Control: reusePort,
 			}
 
 			// wg-dynamic TCP connections always use IPv6.

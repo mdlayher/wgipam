@@ -36,8 +36,8 @@ github.com/matttproud/golang_protobuf_extensions v1.0.1 h1:4hp9jkHxhMHkqkrB3Ix0j
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/mdlayher/promtest v0.0.0-20190902162024-2b6f8ce579e3 h1:M/HpEFh7AFSyOVYDiXfQHtukLE1YB0IXIRsSUh5+AF0=
 github.com/mdlayher/promtest v0.0.0-20190902162024-2b6f8ce579e3/go.mod h1:mou3PlTVe2DTu6A2lSzFYgN0LTDipz/0AkujMDxA8ew=
-github.com/mdlayher/wgdynamic-go v0.0.0-20190903143450-a2fe411d169f h1:Y98W+RQlV6ZTtF0ptb5k2Dj7L0WypHtMgbWZBgR5tFg=
-github.com/mdlayher/wgdynamic-go v0.0.0-20190903143450-a2fe411d169f/go.mod h1:yqFVpf+itSzqAiJBXxhWoT198qwOl0jFhR3vTZ05C5Q=
+github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f h1:ArNsS1n/PCIjTDqqjxpBd+GadJByxtcnu0l/N9fkwVI=
+github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721 h1:RlZweED6sbSArvlE924+mUcZuXKLBHA35U7LN621Bws=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721/go.mod h1:Ickgr2WtCLZ2MDGd4Gr0geeCH5HybhRJbonOgQpvSxc=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
