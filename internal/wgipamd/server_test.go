@@ -35,7 +35,7 @@ import (
 func TestServerRun(t *testing.T) {
 	t.Parallel()
 
-	localhost := mustCIDR("::1/128")
+	host := mustCIDR("2001:db8::10/128")
 
 	tests := []struct {
 		name string
@@ -113,8 +113,8 @@ func TestServerRun(t *testing.T) {
 					Memory: true,
 				},
 				Interfaces: []config.Interface{{
-					Name:    "lo",
-					Subnets: []*net.IPNet{localhost},
+					Name:    "eth0",
+					Subnets: []*net.IPNet{host},
 				}},
 				Debug: config.Debug{
 					Address:    randAddr(t),
@@ -136,7 +136,7 @@ func TestServerRun(t *testing.T) {
 				// works and started successfully. This will also populate
 				// some Prometheus metrics for validation.
 				res := requestIP(t, srv)
-				if diff := cmp.Diff(localhost, res.IPv6); diff != "" {
+				if diff := cmp.Diff(host, res.IPv6); diff != "" {
 					t.Fatalf("unexpected leased IPv6 address (-want +got):\n%s", diff)
 				}
 

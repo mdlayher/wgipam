@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	sub4 = wgipam.MustCIDR("192.0.2.0/30")
-	sub6 = wgipam.MustCIDR("2001:db8::/126")
+	sub4 = wgipam.MustCIDR("192.0.2.8/30")
+	sub6 = wgipam.MustCIDR("2001:db8::8/126")
 )
 
 func TestDualStackIPAllocator(t *testing.T) {
@@ -297,7 +297,8 @@ func TestSimpleIPAllocatorAllocateLoop(t *testing.T) {
 			t.Fatal("ran out of IPs")
 		}
 
-		if diff := cmp.Diff(i%4, int(ip.IP.To4()[3])); diff != "" {
+		// We skip .0 and .1 by convention, so expect either .2 or .3.
+		if diff := cmp.Diff(i%2+2, int(ip.IP.To4()[3])); diff != "" {
 			t.Fatalf("unexpected final IP address octet (-want +got):\n%s", diff)
 		}
 
