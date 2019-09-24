@@ -114,7 +114,7 @@ func TestServerRun(t *testing.T) {
 				},
 				Interfaces: []config.Interface{{
 					Name:    "eth0",
-					Subnets: []*net.IPNet{host},
+					Subnets: []config.Subnet{{Subnet: host}},
 				}},
 				Debug: config.Debug{
 					Address:    randAddr(t),

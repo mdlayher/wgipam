@@ -27,8 +27,10 @@ func TestParse(t *testing.T) {
 	t.Parallel()
 
 	okInterfaces := []config.Interface{{
-		Name:    "wg0",
-		Subnets: []*net.IPNet{mustCIDR("192.0.2.0/24")},
+		Name: "wg0",
+		Subnets: []config.Subnet{{
+			Subnet: mustCIDR("192.0.2.0/24"),
+		}},
 	}}
 
 	tests := []struct {
@@ -73,7 +75,7 @@ debug:
 interfaces:
 - name: "wg0"
   subnets:
-  - foo
+  - subnet: foo
 `,
 		},
 		{
@@ -83,37 +85,99 @@ interfaces:
 interfaces:
 - name: "wg0"
   subnets:
-  - 192.0.2.1/24
+  - subnet: 192.0.2.1/24
 `,
 		},
 		{
-			name: "bad IP range",
+			name: "bad start IP range address",
 			s: `
 ---
 interfaces:
 - name: "wg0"
   subnets:
-  - 192.0.2.1-192.0.2.2-192.0.2.3
+  - subnet: "192.0.2.0/24"
+    start: "foo"
 `,
 		},
 		{
-			name: "bad IP range first",
+			name: "bad start IP range not contained",
 			s: `
 ---
 interfaces:
 - name: "wg0"
   subnets:
-  - foo-192.0.2.10
+  - subnet: "192.0.2.0/24"
+    start: "2001:db8::1"
 `,
 		},
 		{
-			name: "bad IP range last",
+			name: "bad end IP range address",
 			s: `
 ---
 interfaces:
 - name: "wg0"
   subnets:
-  - 192.0.2.1-bar
+  - subnet: "192.0.2.0/24"
+    end: "foo"
+`,
+		},
+		{
+			name: "bad end IP range not contained",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - subnet: "192.0.2.0/24"
+    end: "2001:db8::ffff"
+`,
+		},
+		{
+			name: "bad reserved IP address",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - subnet: "192.0.2.0/24"
+    reserved:
+    - "foo"
+`,
+		},
+		{
+			name: "bad reserved IP address not contained",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - subnet: "192.0.2.0/24"
+    reserved:
+    - "2001:db8::ffff"
+`,
+		},
+		{
+			name: "bad IPv4 end range IP before start range IP",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - subnet: "192.0.2.0/24"
+    start: "192.0.2.2"
+    end: "192.0.2.1"
+`,
+		},
+		{
+			name: "bad IPv6 end range IP before start range IP",
+			s: `
+---
+interfaces:
+- name: "wg0"
+  subnets:
+  - subnet: "2001:db8::/64"
+    start: "2001:db8::ffff"
+    end: "2001:db8::"
 `,
 		},
 		{
@@ -132,8 +196,8 @@ interfaces:
 interfaces:
 - name: "wg0"
   subnets:
-  - "192.0.2.0/24"
-  - "192.0.2.0/24"
+  - subnet: "192.0.2.0/24"
+  - subnet: "192.0.2.0/24"
 `,
 		},
 		{
@@ -143,8 +207,8 @@ interfaces:
 interfaces:
 - name: "wg0"
   subnets:
-  - "192.0.2.0/24"
-  - "192.0.2.0/25"
+  - subnet: "192.0.2.0/24"
+  - subnet: "192.0.2.0/25"
 `,
 		},
 		{
@@ -154,7 +218,7 @@ interfaces:
 interfaces:
 - name: "wg0"
   subnets:
-  - "192.0.2.0/24"
+  - subnet: "192.0.2.0/24"
 `,
 			c: &config.Config{
 				Storage: config.Storage{
@@ -172,7 +236,7 @@ storage:
 interfaces:
 - name: "wg0"
   subnets:
-  - "192.0.2.0/24"
+  - subnet: "192.0.2.0/24"
 `,
 			c: &config.Config{
 				Storage: config.Storage{
@@ -191,37 +255,13 @@ storage:
 interfaces:
 - name: "wg0"
   subnets:
-  - "192.0.2.0/24"
+  - subnet: "192.0.2.0/24"
 `,
 			c: &config.Config{
 				Storage: config.Storage{
 					Memory: true,
 				},
 				Interfaces: okInterfaces,
-			},
-			ok: true,
-		},
-		{
-			name: "OK IP range",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - "192.0.2.1-192.0.2.5"
-`,
-			c: &config.Config{
-				Storage: config.Storage{
-					Memory: true,
-				},
-				Interfaces: []config.Interface{{
-					Name: "wg0",
-					Subnets: []*net.IPNet{
-						mustCIDR("192.0.2.1/32"),
-						mustCIDR("192.0.2.2/31"),
-						mustCIDR("192.0.2.4/31"),
-					},
-				}},
 			},
 			ok: true,
 		},
@@ -234,9 +274,20 @@ interfaces:
 				},
 				Interfaces: []config.Interface{{
 					Name: "wg0",
-					Subnets: []*net.IPNet{
-						mustCIDR("192.0.2.0/24"),
-						mustCIDR("2001:db8::/64"),
+					Subnets: []config.Subnet{
+						{
+							Subnet:   mustCIDR("192.0.2.0/24"),
+							Start:    mustIP("192.0.2.10"),
+							End:      mustIP("192.0.2.255"),
+							Reserved: []net.IP{mustIP("192.0.2.255")},
+						},
+						{
+							Subnet: mustCIDR("2001:db8::/64"),
+							Reserved: []net.IP{
+								mustIP("2001:db8::0"),
+								mustIP("2001:db8::1"),
+							},
+						},
 					},
 				}},
 				Debug: config.Debug{
@@ -262,6 +313,7 @@ interfaces:
 				t.Fatal("expected an error, but none occurred")
 			}
 			if err != nil {
+				t.Logf("err: %v", err)
 				return
 			}
 
@@ -279,6 +331,15 @@ func mustCIDR(s string) *net.IPNet {
 	}
 
 	return ipn
+}
+
+func mustIP(s string) net.IP {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		panicf("failed to parse IP: %s", s)
+	}
+
+	return ip
 }
 
 func panicf(format string, a ...interface{}) {

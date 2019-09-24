@@ -14,51 +14,27 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"strings"
 
 	"github.com/mikioh/ipaddr"
 	"gopkg.in/yaml.v3"
 )
 
+//go:generate embed file -var Default --source default.yaml
+
 // Default is the YAML representation of the default configuration.
-const Default = `---
-# The storage backend for IP address allocations and leases.
-#
-# If none specified, ephemeral in-memory storage will be used.
-storage:
-  # Store data files within the specified folder.
-  file: "/var/lib/wgipamd"
-# Specify one or more WireGuard interfaces to listen on for IP
-# assignment requests.
-interfaces:
-  - name: "wg0"
-    # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.
-    subnets:
-      - "192.0.2.0/24"
-      - "2001:db8::/64"
-      # In addition to CIDR notation, IP ranges are also supported.
-      # - "192.0.2.0-192.0.2.100"
-      # - "2001:db8::-2001:db8::100"
-# Enable or disable the debug HTTP server for facilities such as Prometheus
-# metrics and pprof support.
-#
-# Warning: do not expose pprof on an untrusted network!
-debug:
-  address: "localhost:9475"
-  prometheus: true
-  pprof: false
-`
+var Default = "---\n# The storage backend for IP address allocations and leases.\n#\n# If none specified, ephemeral in-memory storage will be used.\nstorage:\n  # Store data files within the specified folder.\n  file: \"/var/lib/wgipamd\"\n# Specify one or more WireGuard interfaces to listen on for IP\n# assignment requests.\ninterfaces:\n  - name: \"wg0\"\n    # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.\n    subnets:\n      - subnet: \"192.0.2.0/24\"\n        # Optional: specify a range of addresses within the subnet which will be\n        # used for leases. For example, this can be used to skip over statically\n        # allocated peer addresses before or after this range.\n        #\n        # Both start and end are optional and either may be omitted to use the\n        # first and last addresses in a range.\n        #\n        # Addresses in this range can be individually excluded by adding them\n        # to the reserved list for this subnet.\n        start: \"192.0.2.10\"\n        end: \"192.0.2.255\"\n        # Optional: specify individual addresses within the subnet which are\n        # reserved and will not be used for leases. For example, this can be\n        # used to reserve certain addresses for static peer allocations.\n        reserved:\n          - \"192.0.2.255\"\n      - subnet: \"2001:db8::/64\"\n        # Optional: see above.\n        reserved:\n          - \"2001:db8::\"\n          - \"2001:db8::1\"\n# Enable or disable the debug HTTP server for facilities such as Prometheus\n# metrics and pprof support.\n#\n# Warning: do not expose pprof on an untrusted network!\ndebug:\n  address: \"localhost:9475\"\n  prometheus: true\n  pprof: false\n"
 
 // A file is the raw top-level configuration file representation.
 type file struct {
 	Storage    storage `yaml:"storage"`
 	Interfaces []struct {
 		Name    string   `yaml:"name"`
-		Subnets []string `yaml:"subnets"`
+		Subnets []subnet `yaml:"subnets"`
 	} `yaml:"interfaces"`
 	Debug Debug `yaml:"debug"`
 }
@@ -84,7 +60,22 @@ type storage struct {
 // An Interface provides configuration for an individual interface.
 type Interface struct {
 	Name    string
-	Subnets []*net.IPNet
+	Subnets []Subnet
+}
+
+// A Subnet provides configuration for an IP address subnet.
+type Subnet struct {
+	Subnet     *net.IPNet
+	Start, End net.IP
+	Reserved   []net.IP
+}
+
+// A subnet is the raw YAML structure for subnet configuration.
+type subnet struct {
+	Subnet   string   `yaml:"subnet"`
+	Start    string   `yaml:"start"`
+	End      string   `yaml:"end"`
+	Reserved []string `yaml:"reserved"`
 }
 
 // Debug provides configuration for debugging and observability.
@@ -138,14 +129,14 @@ func Parse(r io.Reader) (*Config, error) {
 			return fmt.Errorf("interface %q: %v", ifi.Name, err)
 		}
 
-		subnets := make([]*net.IPNet, 0, len(ifi.Subnets))
+		subnets := make([]Subnet, 0, len(ifi.Subnets))
 		for _, s := range ifi.Subnets {
-			subs, err := parseCIDR(s)
+			sub, err := parseSubnet(s)
 			if err != nil {
 				return nil, handle(err)
 			}
 
-			subnets = append(subnets, subs...)
+			subnets = append(subnets, *sub)
 		}
 
 		if err := checkSubnets(subnets); err != nil {
@@ -170,53 +161,82 @@ func parseStorage(s storage) (*Storage, error) {
 	return &Storage{File: s.File}, nil
 }
 
-// parseCIDR parses s as []*net.IPNet and verifies that it refers to one or
-// more subnets.
-func parseCIDR(s string) ([]*net.IPNet, error) {
-	// Is this a CIDR prefix or an IP range?
-	if !strings.Contains(s, "-") {
-		ip, ipn, err := net.ParseCIDR(s)
-		if err != nil {
-			return nil, err
+// parseSubnet parses a raw subnet into a Subnet structure.
+func parseSubnet(s subnet) (*Subnet, error) {
+	ip, sub, err := net.ParseCIDR(s.Subnet)
+	if err != nil {
+		return nil, err
+	}
+
+	// Narrow down the location of a configuration error.
+	errorf := func(format string, v ...interface{}) error {
+		return fmt.Errorf("subnet %s: %s", s.Subnet, fmt.Sprintf(format, v...))
+	}
+
+	if !ip.Equal(sub.IP) {
+		return nil, errorf("must specify a subnet, not an individual IP address")
+	}
+
+	// start and end are optional and are only set and checked if not empty.
+	var start, end net.IP
+
+	if s.Start != "" {
+		start = net.ParseIP(s.Start)
+		if start == nil {
+			return nil, errorf("invalid start range IP: %s", s.Start)
 		}
 
-		if !ip.Equal(ipn.IP) {
-			return nil, fmt.Errorf("must specify a subnet, not an individual IP address: %s", s)
+		if !sub.Contains(start) {
+			return nil, errorf("does not contain start range IP: %s", start)
+		}
+	}
+
+	if s.End != "" {
+		end = net.ParseIP(s.End)
+		if end == nil {
+			return nil, errorf("invalid end range IP: %s", s.End)
 		}
 
-		return []*net.IPNet{ipn}, nil
+		if !sub.Contains(end) {
+			return nil, errorf("does not contain end range IP: %s", end)
+		}
 	}
 
-	// Parse a range in the format "first-last".
-	ips := strings.Split(s, "-")
-	if len(ips) != 2 {
-		return nil, fmt.Errorf("invalid IP address range %q", s)
+	// If both are set, ensure range start IP <= end IP.
+	if start != nil && end != nil && bytes.Compare(start, end) == 1 {
+		return nil, errorf("end range IP %s occurs before start range IP %s", end, start)
 	}
 
-	first := net.ParseIP(ips[0])
-	if first == nil {
-		return nil, fmt.Errorf("invalid IP address range %q: invalid start IP: %q", s, ips[0])
+	reserved := make([]net.IP, 0, len(s.Reserved))
+	for _, r := range s.Reserved {
+		res := net.ParseIP(r)
+		if res == nil {
+			return nil, errorf("invalid reserved IP: %s", r)
+		}
+
+		if !sub.Contains(res) {
+			return nil, errorf("does not contain reserved IP: %s", res)
+		}
+
+		reserved = append(reserved, res)
 	}
 
-	last := net.ParseIP(ips[1])
-	if last == nil {
-		return nil, fmt.Errorf("invalid IP address range %q: invalid end IP: %q", s, ips[1])
+	// If empty, nil out for easier comparison in tests.
+	if len(reserved) == 0 {
+		reserved = nil
 	}
 
-	// Summarize the prefixes in the range and return them for server use.
-	var subnets []*net.IPNet
-	for _, p := range ipaddr.Summarize(first, last) {
-		subnets = append(subnets, &net.IPNet{
-			IP:   p.IP,
-			Mask: p.Mask,
-		})
-	}
-
-	return subnets, nil
+	return &Subnet{
+		Subnet:   sub,
+		Start:    start,
+		End:      end,
+		Reserved: reserved,
+	}, nil
 }
 
-// checkSubnets verifies the validity of subnets.
-func checkSubnets(subnets []*net.IPNet) error {
+// checkSubnets verifies the validity of Subnets, checking for properties such
+// as subnet overlap.
+func checkSubnets(subnets []Subnet) error {
 	if len(subnets) == 0 {
 		return errors.New("no subnets configured")
 	}
@@ -224,7 +244,7 @@ func checkSubnets(subnets []*net.IPNet) error {
 	// Check if the same subnet appears more than once.
 	seen := make(map[string]struct{}, len(subnets))
 	for _, s := range subnets {
-		str := s.String()
+		str := s.Subnet.String()
 		if _, ok := seen[str]; ok {
 			return fmt.Errorf("duplicate subnet: %s", str)
 		}
@@ -235,7 +255,7 @@ func checkSubnets(subnets []*net.IPNet) error {
 	// Check if any of the configured subnets overlap.
 	for _, s1 := range subnets {
 		for _, s2 := range subnets {
-			p1, p2 := ipaddr.NewPrefix(s1), ipaddr.NewPrefix(s2)
+			p1, p2 := ipaddr.NewPrefix(s1.Subnet), ipaddr.NewPrefix(s2.Subnet)
 			if !p1.Equal(p2) && p1.Overlaps(p2) {
 				return fmt.Errorf("subnets overlap: %s and %s", s1, s2)
 			}
