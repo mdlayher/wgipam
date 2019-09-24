@@ -142,10 +142,6 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 			out = true
 		}
 
-		if shouldSkip(p.IP) {
-			continue
-		}
-
 		// Try to allocate this address. If unsuccessful, the loop will continue
 		// until we reach a free address or run out of IPs.
 		ip := &net.IPNet{
@@ -180,22 +176,4 @@ func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
 	}
 
 	return nil
-}
-
-// shouldSkip indicates if ip should be skipped due to a potential collision
-// with a commonly used address.
-func shouldSkip(ip net.IP) bool {
-	// TODO(mdlayher): perhaps this needs more thought.
-
-	ip = ip.To16()
-	if ip4 := ip.To4(); ip4 != nil {
-		// IPv4: skip .0 and .255 due to network and broadcast address
-		// conventions, and skip .1 due to its common use for the router (likely
-		// used by this server).
-		return ip4[3] == 0 || ip4[3] == 1 || ip4[3] == 255
-	}
-
-	// IPv6: skip ::0 and ::1 due to potential collision with router address
-	// (likely used by this server).
-	return ip[15] == 0 || ip[15] == 1
 }
