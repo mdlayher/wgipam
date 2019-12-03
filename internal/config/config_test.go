@@ -40,186 +40,176 @@ func TestParse(t *testing.T) {
 		ok   bool
 	}{
 		{
-			name: "bad YAML",
+			name: "bad TOML",
 			s:    "xxx",
 		},
 		{
-			name: "bad no interfaces",
+			name: "bad keys",
 			s: `
----
-interfaces:
-`,
+			[bad]
+			[[bad.bad]]
+			`,
+		},
+		{
+			name: "bad no interfaces",
+			s:    ``,
 		},
 		{
 			name: "bad interface",
 			s: `
----
-interfaces:
-- name: ""
-`,
-		},
-		{
-			name: "bad debug address",
-			s: `
----
-interfaces:
-- name: "wg0"
-debug:
-  address: "xxx"
-`,
-		},
-		{
-			name: "bad CIDR",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: foo
-`,
-		},
-		{
-			name: "bad individual IP",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: 192.0.2.1/24
-`,
-		},
-		{
-			name: "bad start IP range address",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    start: "foo"
-`,
-		},
-		{
-			name: "bad start IP range not contained",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    start: "2001:db8::1"
-`,
-		},
-		{
-			name: "bad end IP range address",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    end: "foo"
-`,
-		},
-		{
-			name: "bad end IP range not contained",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    end: "2001:db8::ffff"
-`,
-		},
-		{
-			name: "bad reserved IP address",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    reserved:
-    - "foo"
-`,
-		},
-		{
-			name: "bad reserved IP address not contained",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    reserved:
-    - "2001:db8::ffff"
-`,
-		},
-		{
-			name: "bad IPv4 end range IP before start range IP",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-    start: "192.0.2.2"
-    end: "192.0.2.1"
-`,
-		},
-		{
-			name: "bad IPv6 end range IP before start range IP",
-			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "2001:db8::/64"
-    start: "2001:db8::ffff"
-    end: "2001:db8::"
-`,
+			[[interfaces]]
+			name = ""
+			`,
 		},
 		{
 			name: "bad no subnets",
 			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-`,
+			[[interfaces]]
+			name = "wg0"
+			`,
 		},
+		{
+			name: "bad CIDR",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "foo"
+			`,
+		},
+		{
+			name: "bad individual IP",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.1/24"
+			`,
+		},
+		{
+			name: "bad start IP range address",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  start = "foo"
+			`,
+		},
+		{
+			name: "bad start IP range not contained",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  start = "2001:db8::1"
+			`,
+		},
+		{
+			name: "bad end IP range address",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  end = "foo"
+			`,
+		},
+		{
+			name: "bad end IP range not contained",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  end = "2001:db8::ffff"
+			`,
+		},
+		{
+			name: "bad reserved IP address",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  reserved = ["foo"]
+			`,
+		},
+		{
+			name: "bad reserved IP address not contained",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  reserved = ["2001:db8::ffff"]
+			`,
+		},
+		{
+			name: "bad IPv4 end range IP before start range IP",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  start = "192.0.2.2"
+			  end = "192.0.2.1"
+			`,
+		},
+		{
+			name: "bad IPv6 end range IP before start range IP",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "2001:db8::/64"
+			  start = "2001:db8::ffff"
+			  end = "2001:db8::"
+			`,
+		},
+
 		{
 			name: "bad duplicate subnet",
 			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-  - subnet: "192.0.2.0/24"
-`,
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			`,
 		},
 		{
 			name: "bad subnet overlap",
 			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-  - subnet: "192.0.2.0/25"
-`,
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/25"
+			`,
+		},
+		{
+			name: "bad debug address",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			[debug]
+			address = "xxx"
+			`,
 		},
 		{
 			name: "OK default storage no header",
 			s: `
----
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-`,
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			`,
 			c: &config.Config{
 				Storage: config.Storage{
 					Memory: true,
@@ -231,13 +221,12 @@ interfaces:
 		{
 			name: "OK default storage with header",
 			s: `
----
-storage:
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-`,
+			[storage]
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			`,
 			c: &config.Config{
 				Storage: config.Storage{
 					Memory: true,
@@ -249,14 +238,13 @@ interfaces:
 		{
 			name: "OK default storage with empty items",
 			s: `
----
-storage:
-  file: ""
-interfaces:
-- name: "wg0"
-  subnets:
-  - subnet: "192.0.2.0/24"
-`,
+			[storage]
+			file = ""
+			[[interfaces]]
+			name = "wg0"
+			  [[interfaces.subnets]]
+			  subnet = "192.0.2.0/24"
+			`,
 			c: &config.Config{
 				Storage: config.Storage{
 					Memory: true,
@@ -301,10 +289,7 @@ interfaces:
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			c, err := config.Parse(strings.NewReader(tt.s))
 			if tt.ok && err != nil {
 				t.Fatalf("failed to parse config: %v", err)
