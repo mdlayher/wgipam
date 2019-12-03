@@ -36,7 +36,7 @@ import (
 )
 
 // cfgFile is the name of the default configuration file.
-const cfgFile = "wgipamd.yaml"
+const cfgFile = "wgipamd.toml"
 
 func main() {
 	var (

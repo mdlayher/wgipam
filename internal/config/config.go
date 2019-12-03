@@ -20,23 +20,23 @@ import (
 	"io"
 	"net"
 
+	"github.com/BurntSushi/toml"
 	"github.com/mikioh/ipaddr"
-	"gopkg.in/yaml.v3"
 )
 
-//go:generate embed file -var Default --source default.yaml
+//go:generate embed file -var Default --source default.toml
 
-// Default is the YAML representation of the default configuration.
-var Default = "---\n# The storage backend for IP address allocations and leases.\n#\n# If none specified, ephemeral in-memory storage will be used.\nstorage:\n  # Store data files within the specified folder.\n  file: \"/var/lib/wgipamd\"\n# Specify one or more WireGuard interfaces to listen on for IP\n# assignment requests.\ninterfaces:\n  - name: \"wg0\"\n    # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.\n    subnets:\n      - subnet: \"192.0.2.0/24\"\n        # Optional: specify a range of addresses within the subnet which will be\n        # used for leases. For example, this can be used to skip over statically\n        # allocated peer addresses before or after this range.\n        #\n        # Both start and end are optional and either may be omitted to use the\n        # first and last addresses in a range.\n        #\n        # Addresses in this range can be individually excluded by adding them\n        # to the reserved list for this subnet.\n        start: \"192.0.2.10\"\n        end: \"192.0.2.255\"\n        # Optional: specify individual addresses within the subnet which are\n        # reserved and will not be used for leases. For example, this can be\n        # used to reserve certain addresses for static peer allocations.\n        reserved:\n          - \"192.0.2.255\"\n      - subnet: \"2001:db8::/64\"\n        # Optional: see above.\n        reserved:\n          - \"2001:db8::\"\n          - \"2001:db8::1\"\n# Enable or disable the debug HTTP server for facilities such as Prometheus\n# metrics and pprof support.\n#\n# Warning: do not expose pprof on an untrusted network!\ndebug:\n  address: \"localhost:9475\"\n  prometheus: true\n  pprof: false\n"
+// Default is the toml representation of the default configuration.
+var Default = "# wgipamd vALPHA configuration file\n\n# The storage backend for IP address allocations and leases.\n#\n# If none specified, ephemeral in-memory storage will be used.\n[storage]\nfile = \"/var/lib/wgipamd\"\n\n# Specify one or more WireGuard interfaces to listen on for IP\n# assignment requests.\n[[interfaces]]\nname = \"wg0\"\n  # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.\n  [[interfaces.subnets]]\n  subnet = \"192.0.2.0/24\"\n  # Optional: specify a range of addresses within the subnet which will be\n  # used for leases. For example, this can be used to skip over statically\n  # allocated peer addresses before or after this range.\n  #\n  # Both start and end are optional and either may be omitted to use the\n  # first and last addresses in a range.\n  #\n  # Addresses in this range can be individually excluded by adding them\n  # to the reserved list for this subnet.\n  start = \"192.0.2.10\"\n  end = \"192.0.2.255\"\n  # Optional: specify individual addresses within the subnet which are\n  # reserved and will not be used for leases. For example, this can be\n  # used to reserve certain addresses for static peer allocations.\n  reserved = [\n    \"192.0.2.255\"\n  ]\n\n  [[interfaces.subnets]]\n  subnet = \"2001:db8::/64\"\n  # Optional: see above.\n  reserved = [\n    \"2001:db8::\",\n    \"2001:db8::1\"\n  ]\n\n# Enable or disable the debug HTTP server for facilities such as Prometheus\n# metrics and pprof support.\n#\n# Warning: do not expose pprof on an untrusted network!\n[debug]\naddress = \"localhost:9475\"\nprometheus = true\npprof = false\n"
 
 // A file is the raw top-level configuration file representation.
 type file struct {
-	Storage    storage `yaml:"storage"`
+	Storage    storage `toml:"storage"`
 	Interfaces []struct {
-		Name    string   `yaml:"name"`
-		Subnets []subnet `yaml:"subnets"`
-	} `yaml:"interfaces"`
-	Debug Debug `yaml:"debug"`
+		Name    string   `toml:"name"`
+		Subnets []subnet `toml:"subnets"`
+	} `toml:"interfaces"`
+	Debug Debug `toml:"debug"`
 }
 
 // Config specifies the configuration for wgipamd.
@@ -52,9 +52,9 @@ type Storage struct {
 	File   string
 }
 
-// storage is the raw YAML structure for storage configuration.
+// storage is the raw TOML structure for storage configuration.
 type storage struct {
-	File string `yaml:"file"`
+	File string `toml:"file"`
 }
 
 // An Interface provides configuration for an individual interface.
@@ -70,27 +70,31 @@ type Subnet struct {
 	Reserved   []net.IP
 }
 
-// A subnet is the raw YAML structure for subnet configuration.
+// A subnet is the raw TOML structure for subnet configuration.
 type subnet struct {
-	Subnet   string   `yaml:"subnet"`
-	Start    string   `yaml:"start"`
-	End      string   `yaml:"end"`
-	Reserved []string `yaml:"reserved"`
+	Subnet   string   `toml:"subnet"`
+	Start    string   `toml:"start"`
+	End      string   `toml:"end"`
+	Reserved []string `toml:"reserved"`
 }
 
 // Debug provides configuration for debugging and observability.
 type Debug struct {
-	Address    string `yaml:"address"`
-	Prometheus bool   `yaml:"prometheus"`
-	PProf      bool   `yaml:"pprof"`
+	Address    string `toml:"address"`
+	Prometheus bool   `toml:"prometheus"`
+	PProf      bool   `toml:"pprof"`
 }
 
-// Parse parses a Config in YAML format from an io.Reader and verifies that
+// Parse parses a Config in toml format from an io.Reader and verifies that
 // the configuration is valid.
 func Parse(r io.Reader) (*Config, error) {
 	var f file
-	if err := yaml.NewDecoder(r).Decode(&f); err != nil {
+	md, err := toml.DecodeReader(r, &f)
+	if err != nil {
 		return nil, err
+	}
+	if u := md.Undecoded(); len(u) > 0 {
+		return nil, fmt.Errorf("unrecognized configuration keys: %s", u)
 	}
 
 	// Must configure at least one interface.
@@ -257,7 +261,7 @@ func checkSubnets(subnets []Subnet) error {
 		for _, s2 := range subnets {
 			p1, p2 := ipaddr.NewPrefix(s1.Subnet), ipaddr.NewPrefix(s2.Subnet)
 			if !p1.Equal(p2) && p1.Overlaps(p2) {
-				return fmt.Errorf("subnets overlap: %s and %s", s1, s2)
+				return fmt.Errorf("subnets overlap: %s and %s", s1.Subnet, s2.Subnet)
 			}
 		}
 	}
