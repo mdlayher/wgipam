@@ -17,7 +17,8 @@ tasks:
       /home/build/go/bin/staticcheck ./...
       /home/build/go/bin/golint -set_exit_status . ./cmd/... ./internal/...
       go test -mod vendor -v -race ./...
-      # Ensure a valid and sane YAML configuration can be generated.
+      # Ensure a valid and sane configuration can be generated.
       go build -mod vendor ./cmd/wgipamd/
+      go get github.com/BurntSushi/toml/cmd/tomlv
       ./wgipamd -init
-      yamllint ./wgipamd.yaml
+      /home/build/go/bin/tomlv ./wgipamd.toml
