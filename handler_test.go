@@ -60,7 +60,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "out of IPv4",
 			h: func() *wgipam.Handler {
-				h := mustHandler([]*net.IPNet{sub4, sub6})
+				h := mustHandler([]net.IPNet{*sub4, *sub6})
 
 				if _, ok, err := h.IPv4.Allocate(); !ok || err != nil {
 					t.Fatalf("failed to allocate last IPv4 address: %v, %v", ok, err)
@@ -73,7 +73,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "out of IPv6",
 			h: func() *wgipam.Handler {
-				h := mustHandler([]*net.IPNet{sub4, sub6})
+				h := mustHandler([]net.IPNet{*sub4, *sub6})
 
 				if _, ok, err := h.IPv6.Allocate(); !ok || err != nil {
 					t.Fatalf("failed to allocate last IPv6 address: %v, %v", ok, err)
@@ -85,7 +85,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		},
 		{
 			name: "OK IPv4",
-			h:    mustHandler([]*net.IPNet{sub4}),
+			h:    mustHandler([]net.IPNet{*sub4}),
 			rip: &wgdynamic.RequestIP{
 				IPv4:      sub4,
 				LeaseTime: 10 * time.Second,
@@ -93,7 +93,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		},
 		{
 			name: "OK IPv6",
-			h:    mustHandler([]*net.IPNet{sub6}),
+			h:    mustHandler([]net.IPNet{*sub6}),
 			rip: &wgdynamic.RequestIP{
 				IPv6:      sub6,
 				LeaseTime: 10 * time.Second,
@@ -101,13 +101,13 @@ func TestHandlerRequestIP(t *testing.T) {
 		},
 		{
 			name: "OK dual stack",
-			h:    mustHandler([]*net.IPNet{sub4, sub6}),
+			h:    mustHandler([]net.IPNet{*sub4, *sub6}),
 			rip:  ripDualStack,
 		},
 		{
 			name: "OK dual stack no leases",
 			h: func() *wgipam.Handler {
-				h := mustHandler([]*net.IPNet{sub4, sub6})
+				h := mustHandler([]net.IPNet{*sub4, *sub6})
 
 				// Leases explicitly disabled.
 				h.Leases = nil
@@ -118,7 +118,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "OK dual stack with lease",
 			h: func() *wgipam.Handler {
-				h := mustHandler([]*net.IPNet{sub4, sub6})
+				h := mustHandler([]net.IPNet{*sub4, *sub6})
 
 				// Leases in use and one will be populated immediately when the
 				// request is received, simulating an existing lease before the
@@ -143,7 +143,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		{
 			name: "OK dual stack with expired lease",
 			h: func() *wgipam.Handler {
-				h := mustHandler([]*net.IPNet{sub4, sub6})
+				h := mustHandler([]net.IPNet{*sub4, *sub6})
 
 				// Leases in use and one will be populated immediately when the
 				// request is received. However, the lease is expired and should
@@ -236,7 +236,7 @@ func TestHandlerRequestIP(t *testing.T) {
 	}
 }
 
-func mustHandler(subnets []*net.IPNet) *wgipam.Handler {
+func mustHandler(subnets []net.IPNet) *wgipam.Handler {
 	store := wgipam.MemoryStore()
 
 	ip4s, ip6s, err := wgipam.DualStackIPAllocator(store, subnets)

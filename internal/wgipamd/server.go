@@ -142,9 +142,9 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 
 	// TODO(mdlayher): pull apart the rest of this structure and make use of
 	// start/end/reserved.
-	subnets := make([]*net.IPNet, 0, len(ifi.Subnets))
+	subnets := make([]net.IPNet, 0, len(ifi.Subnets))
 	for _, s := range ifi.Subnets {
-		subnets = append(subnets, s.Subnet)
+		subnets = append(subnets, *s.Subnet)
 	}
 
 	logf("listening on %q, serving: %s",
@@ -247,7 +247,7 @@ func newStore(ifi string, s config.Storage, ll *log.Logger) (wgipam.Store, error
 }
 
 // subnetsString turns subnets into a comma-separated string.
-func subnetsString(subnets []*net.IPNet) string {
+func subnetsString(subnets []net.IPNet) string {
 	var ss []string
 	for _, s := range subnets {
 		ss = append(ss, s.String())

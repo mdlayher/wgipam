@@ -235,8 +235,8 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 		t.Fatalf("failed to save subnet: %v", err)
 	}
 
-	ip4a, ip6a, err := wgipam.DualStackIPAllocator(s, []*net.IPNet{
-		okSubnet4, okSubnet6,
+	ip4a, ip6a, err := wgipam.DualStackIPAllocator(s, []net.IPNet{
+		*okSubnet4, *okSubnet6,
 	})
 	if err != nil {
 		t.Fatalf("failed to create IP allocator: %v", err)

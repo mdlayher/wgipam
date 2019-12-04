@@ -46,20 +46,20 @@ type simpleIPAllocator struct {
 	s       Store
 	mu      sync.Mutex
 	c       *ipaddr.Cursor
-	subnets []*net.IPNet
+	subnets []net.IPNet
 }
 
 // DualStackIPAllocator returns two IPAllocators for each IPv4 and IPv6 address
 // allocation. It is a convenience wrapper around NewIPAllocator that
 // automatically allocates the input subnets into the appropriate IPAllocator.
-func DualStackIPAllocator(store Store, subnets []*net.IPNet) (ip4s, ip6s IPAllocator, err error) {
+func DualStackIPAllocator(store Store, subnets []net.IPNet) (ip4s, ip6s IPAllocator, err error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
 		return nil, nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
 	}
 
 	// Split subnets by family and create IPAllocators for each.
-	var sub4, sub6 []*net.IPNet
+	var sub4, sub6 []net.IPNet
 	for _, s := range subnets {
 		if s.IP.To4() != nil {
 			sub4 = append(sub4, s)
@@ -90,7 +90,7 @@ func DualStackIPAllocator(store Store, subnets []*net.IPNet) (ip4s, ip6s IPAlloc
 // SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
 // by iterating through its subnets. The input subnets must use a single IP
 // address family: either IPv4 or IPv6 exclusively.
-func SimpleIPAllocator(store Store, subnets []*net.IPNet) (IPAllocator, error) {
+func SimpleIPAllocator(store Store, subnets []net.IPNet) (IPAllocator, error) {
 	if len(subnets) == 0 {
 		return nil, errors.New("wgipam: NewIPAllocator requires one or more subnets")
 	}
@@ -107,9 +107,11 @@ func SimpleIPAllocator(store Store, subnets []*net.IPNet) (IPAllocator, error) {
 			return nil, errors.New("wgipam: all IPAllocator subnets must be the same address family")
 		}
 
-		// Register this subnet with our Store for later use.
-		ps = append(ps, *ipaddr.NewPrefix(s))
-		if err := store.SaveSubnet(s); err != nil {
+		// Capture the range variable to get a unique pointer and register this
+		// subnet with our Store for later use.
+		s := s
+		ps = append(ps, *ipaddr.NewPrefix(&s))
+		if err := store.SaveSubnet(&s); err != nil {
 			return nil, err
 		}
 	}
@@ -170,7 +172,7 @@ func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
 			continue
 		}
 
-		if err := s.s.FreeIP(sub, ip); err != nil {
+		if err := s.s.FreeIP(&sub, ip); err != nil {
 			return err
 		}
 	}
