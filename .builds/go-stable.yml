@@ -1,7 +1,6 @@
 image: archlinux
 packages:
   - go
-  - yamllint
 sources:
   - https://github.com/mdlayher/wgipam
 environment:
