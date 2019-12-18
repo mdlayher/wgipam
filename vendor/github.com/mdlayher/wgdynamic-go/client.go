@@ -101,22 +101,11 @@ func (c *Client) RequestIP(ctx context.Context, req *RequestIP) (*RequestIP, err
 	// caller's request.
 	var rip *RequestIP
 	err := c.execute(ctx, func(rw io.ReadWriter) error {
-		if err := sendRequestIP(rw, req); err != nil {
+		if err := sendRequestIP(rw, fromClient, req); err != nil {
 			return err
 		}
 
-		// Begin parsing the response and ensure the server replied with the
-		// appropriate command.
-		p, cmd, err := parse(rw)
-		if err != nil {
-			return err
-		}
-		if cmd != "request_ip" {
-			return errors.New("wgdynamic: server sent malformed request_ip command response")
-		}
-
-		// Now that we've verified the command, parse the rest of its body.
-		rrip, err := parseRequestIP(p)
+		rrip, err := parseRequestIP(newKVParser(rw))
 		if err != nil {
 			return err
 		}

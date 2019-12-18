@@ -11,15 +11,14 @@ import (
 // RequestIP contains IP address requests or assignments, depending on whether
 // the structure originated with a client or server.
 type RequestIP struct {
-	// IPv4 and IPv6 specify IP addresses with subnet masks.
+	// IPs specify IP addresses with subnet masks.
 	//
 	// For clients, these request that specific IP addresses are assigned to
 	// the client. If nil, no specific IP addresses are requested.
 	//
 	// For servers, these specify the IP address assignments which are sent
-	// to a client. If nil, no IP address will be specified for the given
-	// address family.
-	IPv4, IPv6 *net.IPNet
+	// to a client. If nil, no IP addresses will be specified.
+	IPs []*net.IPNet
 
 	// LeaseStart specifies the time that an IP address lease begins.
 	//
@@ -38,12 +37,19 @@ type RequestIP struct {
 	LeaseTime time.Duration
 }
 
+// Indicates if a command originates from client or server since the two are
+// marshaled into slightly different forms.
+const (
+	fromServer = false
+	fromClient = true
+)
+
 // TODO(mdlayher): request_ip protocol version is hardcoded at 1 and should
 // be parameterized in some way.
 
 // sendRequestIP writes a request_ip command with optional IPv4/6 addresses
 // to w.
-func sendRequestIP(w io.Writer, rip *RequestIP) error {
+func sendRequestIP(w io.Writer, isClient bool, rip *RequestIP) error {
 	if rip == nil {
 		// No additional parameters to send.
 		_, err := w.Write([]byte("request_ip=1\n\n"))
@@ -51,14 +57,16 @@ func sendRequestIP(w io.Writer, rip *RequestIP) error {
 	}
 
 	// Build the command and attach optional parameters.
-	b := bytes.NewBufferString("request_ip=1\n")
+	var b bytes.Buffer
+	if isClient {
+		// Only clients issue the command header.
+		b.WriteString("request_ip=1\n")
+	}
 
-	if rip.IPv4 != nil {
-		b.WriteString(fmt.Sprintf("ipv4=%s\n", rip.IPv4.String()))
+	for _, ip := range rip.IPs {
+		b.WriteString(fmt.Sprintf("ip=%s\n", ip.String()))
 	}
-	if rip.IPv6 != nil {
-		b.WriteString(fmt.Sprintf("ipv6=%s\n", rip.IPv6.String()))
-	}
+
 	if !rip.LeaseStart.IsZero() {
 		b.WriteString(fmt.Sprintf("leasestart=%d\n", rip.LeaseStart.Unix()))
 	}
@@ -78,10 +86,8 @@ func parseRequestIP(p *kvParser) (*RequestIP, error) {
 	var rip RequestIP
 	for p.Next() {
 		switch p.Key() {
-		case "ipv4":
-			rip.IPv4 = p.IPNet(4)
-		case "ipv6":
-			rip.IPv6 = p.IPNet(6)
+		case "ip":
+			rip.IPs = append(rip.IPs, p.IPNet())
 		case "leasestart":
 			rip.LeaseStart = time.Unix(int64(p.Int()), 0)
 		case "leasetime":
@@ -96,9 +102,9 @@ func parseRequestIP(p *kvParser) (*RequestIP, error) {
 	return &rip, nil
 }
 
-// parse begins the parsing process for reading a request or response, returning
+// parseRequest begins the parsing process for reading a client request, returning
 // a kvParser and the command being performed.
-func parse(r io.Reader) (*kvParser, string, error) {
+func parseRequest(r io.Reader) (*kvParser, string, error) {
 	// Consume the first line to retrieve the command.
 	p := newKVParser(r)
 	if !p.Next() {

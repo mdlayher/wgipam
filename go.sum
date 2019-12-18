@@ -39,6 +39,8 @@ github.com/mdlayher/promtest v0.0.0-20190902162024-2b6f8ce579e3 h1:M/HpEFh7AFSyO
 github.com/mdlayher/promtest v0.0.0-20190902162024-2b6f8ce579e3/go.mod h1:mou3PlTVe2DTu6A2lSzFYgN0LTDipz/0AkujMDxA8ew=
 github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f h1:ArNsS1n/PCIjTDqqjxpBd+GadJByxtcnu0l/N9fkwVI=
 github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
+github.com/mdlayher/wgdynamic-go v0.0.0-20191216221752-6b79ddabe386 h1:gEjP1APXQ4w3DfRkh5MuQDIQ9NYqFprSScpYslelQpY=
+github.com/mdlayher/wgdynamic-go v0.0.0-20191216221752-6b79ddabe386/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721 h1:RlZweED6sbSArvlE924+mUcZuXKLBHA35U7LN621Bws=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721/go.mod h1:Ickgr2WtCLZ2MDGd4Gr0geeCH5HybhRJbonOgQpvSxc=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
@@ -110,6 +112,10 @@ golang.org/x/sys v0.0.0-20190922100055-0a153f010e69/go.mod h1:h1NjWce9XRLGQEsW7w
 golang.org/x/sys v0.0.0-20191010194322-b09406accb47/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20191128015809-6d18c012aee9 h1:ZBzSG/7F4eNKz2L3GE9o300RX0Az1Bw5HF7PDraD+qU=
 golang.org/x/sys v0.0.0-20191128015809-6d18c012aee9/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20191210023423-ac6580df4449 h1:gSbV7h1NRL2G1xTg/owz62CST1oJBmxy4QpMMregXVQ=
+golang.org/x/sys v0.0.0-20191210023423-ac6580df4449/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20191218084908-4a24b4065292 h1:Y8q0zsdcgAd+JU8VUA8p8Qv2YhuY9zevDG2ORt5qBUI=
+golang.org/x/sys v0.0.0-20191218084908-4a24b4065292/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
