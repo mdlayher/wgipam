@@ -40,8 +40,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		}
 
 		ripDualStack = &wgdynamic.RequestIP{
-			IPv4:      sub4,
-			IPv6:      sub6,
+			IPs:       []*net.IPNet{sub4, sub6},
 			LeaseTime: 10 * time.Second,
 		}
 	)
@@ -87,7 +86,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			name: "OK IPv4",
 			h:    mustHandler([]net.IPNet{*sub4}),
 			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
+				IPs:       []*net.IPNet{sub4},
 				LeaseTime: 10 * time.Second,
 			},
 		},
@@ -95,7 +94,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			name: "OK IPv6",
 			h:    mustHandler([]net.IPNet{*sub6}),
 			rip: &wgdynamic.RequestIP{
-				IPv6:      sub6,
+				IPs:       []*net.IPNet{sub6},
 				LeaseTime: 10 * time.Second,
 			},
 		},
@@ -215,13 +214,23 @@ func TestHandlerRequestIP(t *testing.T) {
 				t.Fatalf("failed to get leases: %v", err)
 			}
 
+			// TODO: cleanup.
+			var ip4, ip6 *net.IPNet
+			switch len(rip.IPs) {
+			case 1:
+				ip4 = rip.IPs[0]
+			case 2:
+				ip4 = rip.IPs[0]
+				ip6 = rip.IPs[1]
+			}
+
 			// Synthesize an expected Lease out of the parameters returned by
 			// the server. The Start fields is nil'd out for comparisons as we
 			// ultimately care mostly about the addresses assigned and the
 			// duration.
 			want := []*wgipam.Lease{{
-				IPv4:   rip.IPv4,
-				IPv6:   rip.IPv6,
+				IPv4:   ip4,
+				IPv6:   ip6,
 				Length: rip.LeaseTime,
 			}}
 

@@ -86,7 +86,7 @@ func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 			return nil, err
 		}
 
-		h.logf(src, "leases not configured, allocating ephemeral IP addresses: IPv4: %s, IPv6: %s", res.IPv4, res.IPv6)
+		h.logf(src, "leases not configured, allocating ephemeral IP addresses: %v", res.IPs)
 		return res, nil
 	}
 
@@ -162,9 +162,19 @@ func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.Req
 		}
 	}
 
+	// In the future it may be possible for wg-dynamic-client to consume
+	// an arbitrary number of addresses. For now, we assume it accepts a
+	// single address from each family.
+	var ips []*net.IPNet
+	if ok4 {
+		ips = append(ips, ip4)
+	}
+	if ok6 {
+		ips = append(ips, ip6)
+	}
+
 	return &wgdynamic.RequestIP{
-		IPv4:       ip4,
-		IPv6:       ip6,
+		IPs:        ips,
 		LeaseStart: timeNow(),
 		LeaseTime:  10 * time.Second,
 	}, nil
@@ -178,10 +188,17 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 	}
 
 	l := &Lease{
-		IPv4:   res.IPv4,
-		IPv6:   res.IPv6,
 		Start:  res.LeaseStart,
 		Length: res.LeaseTime,
+	}
+
+	// TODO: use Lease at lower layers.
+	switch len(res.IPs) {
+	case 1:
+		l.IPv4 = res.IPs[0]
+	case 2:
+		l.IPv4 = res.IPs[0]
+		l.IPv6 = res.IPs[1]
 	}
 
 	h.logf(src, "creating new IP address lease: %s", l)
@@ -207,8 +224,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 	}
 
 	return &wgdynamic.RequestIP{
-		IPv4:       l.IPv4,
-		IPv6:       l.IPv6,
+		IPs:        []*net.IPNet{l.IPv4, l.IPv6},
 		LeaseStart: l.Start,
 		LeaseTime:  l.Length,
 	}, nil
