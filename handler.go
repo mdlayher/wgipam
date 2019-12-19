@@ -33,6 +33,10 @@ type Handler struct {
 	// If either are nil, addresses will not be allocated for that family.
 	IPv4, IPv6 IPAllocator
 
+	// LeaseDuration specifies the amount of time leases may exist before they
+	// expire and are purged.
+	LeaseDuration time.Duration
+
 	// Log specifies a logger for the Server. If nil, all logs are discarded.
 	Log *log.Logger
 
@@ -126,7 +130,7 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 	l := &Lease{
 		IPs:    ips,
 		Start:  timeNow(),
-		Length: 10 * time.Second,
+		Length: h.LeaseDuration,
 	}
 
 	h.logf(src, "creating new IP address lease: %s", l)
@@ -147,7 +151,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 	// We have a current lease, honor it and update its expiration time.
 	// TODO(mdlayher): lease expiration, parameterize expiration time.
 	l.Start = timeNow()
-	l.Length = 10 * time.Second
+	l.Length = h.LeaseDuration
 
 	h.logf(src, "renewing IP address lease: %s", l)
 

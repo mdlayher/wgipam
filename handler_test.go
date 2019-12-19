@@ -224,8 +224,9 @@ func mustHandler(subnets []net.IPNet) *wgipam.Handler {
 	}
 
 	return &wgipam.Handler{
-		IPv4: ip4s,
-		IPv6: ip6s,
+		LeaseDuration: 10 * time.Second,
+		IPv4:          ip4s,
+		IPv6:          ip6s,
 		// Leases are always ephemeral in this test handler.
 		Leases: store,
 	}

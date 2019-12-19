@@ -18,6 +18,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/mdlayher/wgipam/internal/config"
@@ -27,7 +28,8 @@ func TestParse(t *testing.T) {
 	t.Parallel()
 
 	okInterfaces := []config.Interface{{
-		Name: "wg0",
+		Name:          "wg0",
+		LeaseDuration: 1 * time.Hour,
 		Subnets: []config.Subnet{{
 			Subnet: mustCIDR("192.0.2.0/24"),
 		}},
@@ -59,6 +61,14 @@ func TestParse(t *testing.T) {
 			s: `
 			[[interfaces]]
 			name = ""
+			`,
+		},
+		{
+			name: "bad lease duration",
+			s: `
+			[[interfaces]]
+			name = "wg0"
+			lease_duration = "foo"
 			`,
 		},
 		{
@@ -261,7 +271,8 @@ func TestParse(t *testing.T) {
 					File: "/var/lib/wgipamd",
 				},
 				Interfaces: []config.Interface{{
-					Name: "wg0",
+					Name:          "wg0",
+					LeaseDuration: 1 * time.Hour,
 					Subnets: []config.Subnet{
 						{
 							Subnet:   mustCIDR("192.0.2.0/24"),

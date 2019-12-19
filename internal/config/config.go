@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/mikioh/ipaddr"
@@ -27,14 +28,15 @@ import (
 //go:generate embed file -var Default --source default.toml
 
 // Default is the toml representation of the default configuration.
-var Default = "# wgipamd vALPHA configuration file\n\n# The storage backend for IP address allocations and leases.\n#\n# If none specified, ephemeral in-memory storage will be used.\n[storage]\nfile = \"/var/lib/wgipamd\"\n\n# Specify one or more WireGuard interfaces to listen on for IP\n# assignment requests.\n[[interfaces]]\nname = \"wg0\"\n  # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.\n  [[interfaces.subnets]]\n  subnet = \"192.0.2.0/24\"\n  # Optional: specify a range of addresses within the subnet which will be\n  # used for leases. For example, this can be used to skip over statically\n  # allocated peer addresses before or after this range.\n  #\n  # Both start and end are optional and either may be omitted to use the\n  # first and last addresses in a range.\n  #\n  # Addresses in this range can be individually excluded by adding them\n  # to the reserved list for this subnet.\n  start = \"192.0.2.10\"\n  end = \"192.0.2.255\"\n  # Optional: specify individual addresses within the subnet which are\n  # reserved and will not be used for leases. For example, this can be\n  # used to reserve certain addresses for static peer allocations.\n  reserved = [\n    \"192.0.2.255\"\n  ]\n\n  [[interfaces.subnets]]\n  subnet = \"2001:db8::/64\"\n  # Optional: see above.\n  reserved = [\n    \"2001:db8::\",\n    \"2001:db8::1\"\n  ]\n\n# Enable or disable the debug HTTP server for facilities such as Prometheus\n# metrics and pprof support.\n#\n# Warning: do not expose pprof on an untrusted network!\n[debug]\naddress = \"localhost:9475\"\nprometheus = true\npprof = false\n"
+var Default = "# wgipamd vALPHA configuration file\n\n# The storage backend for IP address allocations and leases.\n#\n# If none specified, ephemeral in-memory storage will be used.\n[storage]\nfile = \"/var/lib/wgipamd\"\n\n# Specify one or more WireGuard interfaces to listen on for IP\n# assignment requests.\n[[interfaces]]\nname = \"wg0\"\n\n# Optional: the amount of time a lease will exist before it expires, specified\n# in Go time.ParseDuration format (https://golang.org/pkg/time/#ParseDuration).\n# If not set, defaults to 1 hour.\nlease_duration = \"1h\"\n\n  # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.\n  [[interfaces.subnets]]\n  subnet = \"192.0.2.0/24\"\n  # Optional: specify a range of addresses within the subnet which will be\n  # used for leases. For example, this can be used to skip over statically\n  # allocated peer addresses before or after this range.\n  #\n  # Both start and end are optional and either may be omitted to use the\n  # first and last addresses in a range.\n  #\n  # Addresses in this range can be individually excluded by adding them\n  # to the reserved list for this subnet.\n  start = \"192.0.2.10\"\n  end = \"192.0.2.255\"\n  # Optional: specify individual addresses within the subnet which are\n  # reserved and will not be used for leases. For example, this can be\n  # used to reserve certain addresses for static peer allocations.\n  reserved = [\n    \"192.0.2.255\"\n  ]\n\n  [[interfaces.subnets]]\n  subnet = \"2001:db8::/64\"\n  # Optional: see above.\n  reserved = [\n    \"2001:db8::\",\n    \"2001:db8::1\"\n  ]\n\n# Enable or disable the debug HTTP server for facilities such as Prometheus\n# metrics and pprof support.\n#\n# Warning: do not expose pprof on an untrusted network!\n[debug]\naddress = \"localhost:9475\"\nprometheus = true\npprof = false\n"
 
 // A file is the raw top-level configuration file representation.
 type file struct {
 	Storage    storage `toml:"storage"`
 	Interfaces []struct {
-		Name    string   `toml:"name"`
-		Subnets []subnet `toml:"subnets"`
+		Name          string   `toml:"name"`
+		LeaseDuration string   `toml:"lease_duration"`
+		Subnets       []subnet `toml:"subnets"`
 	} `toml:"interfaces"`
 	Debug Debug `toml:"debug"`
 }
@@ -59,8 +61,9 @@ type storage struct {
 
 // An Interface provides configuration for an individual interface.
 type Interface struct {
-	Name    string
-	Subnets []Subnet
+	Name          string
+	LeaseDuration time.Duration
+	Subnets       []Subnet
 }
 
 // A Subnet provides configuration for an IP address subnet.
@@ -133,6 +136,17 @@ func Parse(r io.Reader) (*Config, error) {
 			return fmt.Errorf("interface %q: %v", ifi.Name, err)
 		}
 
+		// Default to 1 hour leases, but parse a different value if specified.
+		dur := 1 * time.Hour
+		if ifi.LeaseDuration != "" {
+			d, err := time.ParseDuration(ifi.LeaseDuration)
+			if err != nil {
+				return nil, fmt.Errorf("invalid lease duration: %v", err)
+			}
+
+			dur = d
+		}
+
 		subnets := make([]Subnet, 0, len(ifi.Subnets))
 		for _, s := range ifi.Subnets {
 			sub, err := parseSubnet(s)
@@ -148,8 +162,9 @@ func Parse(r io.Reader) (*Config, error) {
 		}
 
 		c.Interfaces = append(c.Interfaces, Interface{
-			Name:    ifi.Name,
-			Subnets: subnets,
+			Name:          ifi.Name,
+			LeaseDuration: dur,
+			Subnets:       subnets,
 		})
 	}
 

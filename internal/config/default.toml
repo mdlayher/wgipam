@@ -10,6 +10,12 @@ file = "/var/lib/wgipamd"
 # assignment requests.
 [[interfaces]]
 name = "wg0"
+
+# Optional: the amount of time a lease will exist before it expires, specified
+# in Go time.ParseDuration format (https://golang.org/pkg/time/#ParseDuration).
+# If not set or empty, defaults to 1 hour.
+lease_duration = "1h"
+
   # Specify one or more IPv4 and/or IPv6 subnets to allocate addresses from.
   [[interfaces.subnets]]
   subnet = "192.0.2.0/24"
