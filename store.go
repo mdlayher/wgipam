@@ -159,13 +159,7 @@ func (s *memoryStore) Purge(t time.Time) error {
 		}
 
 		delete(s.leases, k)
-
-		if v.IPv4 != nil {
-			freed = append(freed, v.IPv4)
-		}
-		if v.IPv6 != nil {
-			freed = append(freed, v.IPv6)
-		}
+		freed = append(freed, v.IPs...)
 	}
 
 	s.subnetsMu.Lock()
@@ -421,13 +415,7 @@ func (s *boltStore) Purge(t time.Time) error {
 			}
 
 			leases = append(leases, k)
-
-			if l.IPv4 != nil {
-				freed = append(freed, l.IPv4)
-			}
-			if l.IPv6 != nil {
-				freed = append(freed, l.IPv6)
-			}
+			freed = append(freed, l.IPs...)
 
 			return nil
 		})

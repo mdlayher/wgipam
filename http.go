@@ -111,9 +111,13 @@ func (h *HTTPHandler) leases(w http.ResponseWriter, r *http.Request) {
 	// Unpack leases into JSON-friendly format.
 	out := make([]jsonLease, 0, len(leases))
 	for _, l := range leases {
+		ips := make([]string, 0, len(l.IPs))
+		for _, ip := range l.IPs {
+			ips = append(ips, ip.String())
+		}
+
 		out = append(out, jsonLease{
-			IPv4:   l.IPv4.String(),
-			IPv6:   l.IPv6.String(),
+			IPs:    ips,
 			Start:  int(l.Start.Unix()),
 			Length: int(l.Length.Seconds()),
 		})
@@ -124,8 +128,7 @@ func (h *HTTPHandler) leases(w http.ResponseWriter, r *http.Request) {
 
 // A jsonLease is the JSON representation of a Lease.
 type jsonLease struct {
-	IPv4   string `json:"ipv4"`
-	IPv6   string `json:"ipv6"`
-	Start  int    `json:"start"`
-	Length int    `json:"length"`
+	IPs    []string `json:"ips"`
+	Start  int      `json:"start"`
+	Length int      `json:"length"`
 }

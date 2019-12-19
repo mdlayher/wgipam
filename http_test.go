@@ -15,6 +15,7 @@ package wgipam
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,8 +30,7 @@ func TestHTTPHandler(t *testing.T) {
 	t.Parallel()
 
 	l := &Lease{
-		IPv4:   MustCIDR("192.0.2.0/32"),
-		IPv6:   MustCIDR("2001:db8::/128"),
+		IPs:    []*net.IPNet{MustCIDR("192.0.2.0/32"), MustCIDR("2001:db8::/128")},
 		Start:  time.Unix(1, 0),
 		Length: 10 * time.Second,
 	}
@@ -62,8 +62,7 @@ func TestHTTPHandler(t *testing.T) {
 			path: "/leases/wg0",
 			ok:   true,
 			leases: []jsonLease{{
-				IPv4:   l.IPv4.String(),
-				IPv6:   l.IPv6.String(),
+				IPs:    []string{l.IPs[0].String(), l.IPs[1].String()},
 				Start:  int(l.Start.Unix()),
 				Length: int(l.Length.Seconds()),
 			}},
