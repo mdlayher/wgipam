@@ -16,7 +16,6 @@ package wgipam_test
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -133,9 +132,12 @@ func TestHandlerRequestIP(t *testing.T) {
 				// be ignored.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						// Use an address that will not be allocated by our
-						// configuration and verify it is removed.
-						IPs:    []*net.IPNet{wgipam.MustCIDR("192.0.2.255/32")},
+						// Use addresses that will not be allocated by our
+						// configuration and verify they are removed.
+						IPs: []*net.IPNet{
+							wgipam.MustCIDR("192.0.2.255/32"),
+							wgipam.MustCIDR("2001:db8::ffff/128"),
+						},
 						Start:  time.Unix(1, 0),
 						Length: 10 * time.Second,
 					}
@@ -175,8 +177,6 @@ func TestHandlerRequestIP(t *testing.T) {
 
 				return
 			}
-
-			log.Printf("%#v", rip)
 
 			// Equality with time is tricky, so just make sure the lease was
 			// created recently and then do an exact comparison after clearing
