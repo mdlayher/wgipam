@@ -109,21 +109,28 @@ func (h *HTTPHandler) leases(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Unpack leases into JSON-friendly format.
-	out := make([]jsonLease, 0, len(leases))
+	ac := apiContainer{
+		Leases: make([]jsonLease, 0, len(leases)),
+	}
 	for _, l := range leases {
 		ips := make([]string, 0, len(l.IPs))
 		for _, ip := range l.IPs {
 			ips = append(ips, ip.String())
 		}
 
-		out = append(out, jsonLease{
+		ac.Leases = append(ac.Leases, jsonLease{
 			IPs:    ips,
 			Start:  int(l.Start.Unix()),
 			Length: int(l.Length.Seconds()),
 		})
 	}
 
-	_ = json.NewEncoder(w).Encode(out)
+	_ = json.NewEncoder(w).Encode(ac)
+}
+
+// An apiContainer is the top-level API response object.
+type apiContainer struct {
+	Leases []jsonLease `json:"leases"`
 }
 
 // A jsonLease is the JSON representation of a Lease.

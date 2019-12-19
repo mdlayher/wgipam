@@ -107,12 +107,12 @@ func TestHTTPHandler(t *testing.T) {
 				return
 			}
 
-			var leases []jsonLease
-			if err := json.NewDecoder(res.Body).Decode(&leases); err != nil {
+			var ac apiContainer
+			if err := json.NewDecoder(res.Body).Decode(&ac); err != nil {
 				t.Fatalf("failed to decode leases: %v", err)
 			}
 
-			if diff := cmp.Diff(tt.leases, leases); diff != "" {
+			if diff := cmp.Diff(tt.leases, ac.Leases); diff != "" {
 				t.Fatalf("unexpected leases(-want +got):\n%s", diff)
 			}
 		})
