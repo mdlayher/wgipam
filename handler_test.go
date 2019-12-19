@@ -217,8 +217,13 @@ func TestHandlerRequestIP(t *testing.T) {
 	}
 }
 
-func mustHandler(subnets []net.IPNet) *wgipam.Handler {
+func mustHandler(subs []net.IPNet) *wgipam.Handler {
 	store := wgipam.MemoryStore()
+
+	subnets := make([]wgipam.Subnet, 0, len(subs))
+	for _, s := range subs {
+		subnets = append(subnets, wgipam.Subnet{Subnet: s})
+	}
 
 	ipa, err := wgipam.DualStackIPAllocator(store, subnets)
 	if err != nil {

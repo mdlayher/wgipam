@@ -55,6 +55,15 @@ type IPAllocator interface {
 	Free(ip *net.IPNet) error
 }
 
+// A Subnet is an IP address subnet which can be used for IP address allocations.
+// It also contains parameters which can be used to prevent certain addresses
+// from being allocated.
+type Subnet struct {
+	Subnet     net.IPNet
+	Start, End net.IP
+	Reserved   []net.IP
+}
+
 // A multiIPAllocator is an IPAllocator that wraps several internal IPAllocators,
 // so different allocations strategies may be used for different IP families.
 type multiIPAllocator struct {
@@ -65,16 +74,16 @@ type multiIPAllocator struct {
 // DualStackIPAllocator returns an IPAllocator which can allocate both IPv4 and
 // IPv6 addresses. It is a convenience wrapper around other IPAllocators that
 // automatically allocates addresses from the input subnets as appropriate.
-func DualStackIPAllocator(store Store, subnets []net.IPNet) (IPAllocator, error) {
+func DualStackIPAllocator(store Store, subnets []Subnet) (IPAllocator, error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
 		return nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
 	}
 
 	// Split subnets by family and create IPAllocators for each.
-	var sub4, sub6 []net.IPNet
+	var sub4, sub6 []Subnet
 	for _, s := range subnets {
-		if s.IP.To4() != nil {
+		if s.Subnet.IP.To4() != nil {
 			sub4 = append(sub4, s)
 		} else {
 			sub6 = append(sub6, s)
@@ -200,32 +209,69 @@ func (mia *multiIPAllocator) Free(ip *net.IPNet) error {
 // A simpleIPAllocator is an IPAllocator that allocates addresses in order by
 // iterating through its input subnets.
 type simpleIPAllocator struct {
-	f      Family
-	s      Store
-	mu     sync.Mutex
-	c      *ipaddr.Cursor
-	subnet *net.IPNet
+	f     Family
+	s     Store
+	mu    sync.Mutex
+	sub   Subnet
+	c     *ipaddr.Cursor
+	start *ipaddr.Position
+	end   *ipaddr.Position
 }
 
 // SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
 // by iterating through addresses in a subnet.
-func SimpleIPAllocator(store Store, subnet net.IPNet) (IPAllocator, error) {
-	if err := store.SaveSubnet(&subnet); err != nil {
+func SimpleIPAllocator(store Store, subnet Subnet) (IPAllocator, error) {
+	if err := store.SaveSubnet(&subnet.Subnet); err != nil {
 		return nil, err
 	}
 
+	p := *ipaddr.NewPrefix(&subnet.Subnet)
+	c := ipaddr.NewCursor([]ipaddr.Prefix{p})
+
+	// Set the start and end cursor positions to either the default or those
+	// specified by the user.
+	start := c.First()
+	if subnet.Start != nil {
+		start = &ipaddr.Position{
+			IP:     subnet.Start,
+			Prefix: p,
+		}
+
+		if err := c.Set(start); err != nil {
+			return nil, err
+		}
+	}
+
+	var end *ipaddr.Position
+	if subnet.End != nil {
+		end = &ipaddr.Position{
+			IP:     subnet.End,
+			Prefix: p,
+		}
+
+		// Advance the end position by 1 so that end is the actual final address
+		// the cursor can reach, not 'end - 1'.
+		ctmp := ipaddr.NewCursor([]ipaddr.Prefix{p})
+		if err := ctmp.Set(end); err != nil {
+			return nil, err
+		}
+		end = ctmp.Next()
+	}
+
 	return &simpleIPAllocator{
-		f:      ipFamily(&subnet),
-		s:      store,
-		c:      ipaddr.NewCursor([]ipaddr.Prefix{*ipaddr.NewPrefix(&subnet)}),
-		subnet: &subnet,
+		f:     ipFamily(&subnet.Subnet),
+		s:     store,
+		sub:   subnet,
+		c:     c,
+		start: start,
+		end:   end,
 	}, nil
 }
 
 // Allocate implements IPAllocator.
 func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) {
 	if family != s.f {
-		return nil, false, fmt.Errorf("wgipam: IPAllocator for subnet %s only manages %s addresses", s.subnet, s.f)
+		return nil, false, fmt.Errorf("wgipam: IPAllocator for subnet %s only manages %s addresses", s.sub.Subnet, s.f)
 	}
 
 	s.mu.Lock()
@@ -234,14 +280,18 @@ func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) 
 	var out bool
 	for {
 		p := s.c.Pos()
-		if s.c.Next() == nil {
+		next := s.c.Next()
+		if next == nil || (next != nil && s.end != nil && next.IP.Equal(s.end.IP)) {
+			// We have reached the end of the cursor, or the user set the end
+			// of the cursor to this point.
+
 			if out {
 				// No more addresses to provide.
 				return nil, false, nil
 			}
 
 			// We've reached the end of the cursor, seek back to the beginning.
-			if err := s.c.Set(s.c.First()); err != nil {
+			if err := s.c.Set(s.start); err != nil {
 				return nil, false, err
 			}
 			out = true
@@ -259,6 +309,7 @@ func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) 
 			return nil, false, err
 		}
 		if ok {
+			//log.Println(p)
 			// Address successfully allocated.
 			return []*net.IPNet{ip}, true, nil
 		}
@@ -267,11 +318,11 @@ func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) 
 
 // Free implements IPAllocator.
 func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
-	if !s.subnet.Contains(ip.IP) {
+	if !s.sub.Subnet.Contains(ip.IP) {
 		return nil
 	}
 
-	return s.s.FreeIP(s.subnet, ip)
+	return s.s.FreeIP(&s.sub.Subnet, ip)
 }
 
 func ipMask(ip *net.IPNet) net.IPMask {

@@ -62,7 +62,7 @@ func TestDualStackIPAllocator(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		subnets []net.IPNet
+		subnets []wgipam.Subnet
 		ok      bool
 		check   func(t *testing.T, ipa wgipam.IPAllocator)
 	}{
@@ -71,7 +71,7 @@ func TestDualStackIPAllocator(t *testing.T) {
 		},
 		{
 			name:    "OK IPv4 only",
-			subnets: []net.IPNet{*sub4},
+			subnets: []wgipam.Subnet{{Subnet: *sub4}},
 			ok:      true,
 			check: func(t *testing.T, ipa wgipam.IPAllocator) {
 				contains(t, ipa, []net.IPNet{*sub4})
@@ -79,16 +79,20 @@ func TestDualStackIPAllocator(t *testing.T) {
 		},
 		{
 			name:    "OK IPv6 only",
-			subnets: []net.IPNet{*sub6},
+			subnets: []wgipam.Subnet{{Subnet: *sub6}},
 			ok:      true,
 			check: func(t *testing.T, ipa wgipam.IPAllocator) {
 				contains(t, ipa, []net.IPNet{*sub6})
 			},
 		},
 		{
-			name:    "OK dual stack",
-			subnets: []net.IPNet{*sub4, *sub6, *ula6},
-			ok:      true,
+			name: "OK dual stack",
+			subnets: []wgipam.Subnet{
+				{Subnet: *sub4},
+				{Subnet: *sub6},
+				{Subnet: *ula6},
+			},
+			ok: true,
 			check: func(t *testing.T, ipa wgipam.IPAllocator) {
 				// Should get an address from each input subnet.
 				contains(t, ipa, []net.IPNet{*sub4, *sub6, *ula6})
@@ -117,7 +121,7 @@ func TestDualStackIPAllocator(t *testing.T) {
 	}
 }
 
-func TestSimpleIPAllocatorAllocate(t *testing.T) {
+func TestSimpleIPAllocatorAllocateSubnet(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -159,7 +163,9 @@ func TestSimpleIPAllocatorAllocate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnet)
+			ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), wgipam.Subnet{
+				Subnet: tt.subnet,
+			})
 			if err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
@@ -200,6 +206,144 @@ func TestSimpleIPAllocatorAllocate(t *testing.T) {
 				if err := ipa.Free(ipn); err != nil {
 					t.Fatalf("failed to free IP address: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestSimpleIPAllocatorAllocateReserved(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		subnet wgipam.Subnet
+		want   []string
+	}{
+		{
+			name: "IPv4 no reserved",
+			subnet: wgipam.Subnet{
+				Subnet: *sub4,
+			},
+			want: []string{
+				"192.0.2.0/32",
+				"192.0.2.1/32",
+				"192.0.2.2/32",
+				"192.0.2.3/32",
+			},
+		},
+		{
+			name: "IPv4 start",
+			subnet: wgipam.Subnet{
+				Subnet: *sub4,
+				Start:  net.IPv4(192, 0, 2, 2),
+			},
+			want: []string{
+				"192.0.2.2/32",
+				"192.0.2.3/32",
+			},
+		},
+		{
+			name: "IPv4 end",
+			subnet: wgipam.Subnet{
+				Subnet: *sub4,
+				End:    net.IPv4(192, 0, 2, 1),
+			},
+			want: []string{
+				"192.0.2.0/32",
+				"192.0.2.1/32",
+			},
+		},
+		{
+			name: "IPv4 start/end",
+			subnet: wgipam.Subnet{
+				Subnet: *sub4,
+				Start:  net.IPv4(192, 0, 2, 1),
+				End:    net.IPv4(192, 0, 2, 2),
+			},
+			want: []string{
+				"192.0.2.1/32",
+				"192.0.2.2/32",
+			},
+		},
+		{
+			name: "IPv6 no reserved",
+			subnet: wgipam.Subnet{
+				Subnet: *sub6,
+			},
+			want: []string{
+				"2001:db8::/128",
+				"2001:db8::1/128",
+				"2001:db8::2/128",
+				"2001:db8::3/128",
+			},
+		},
+		{
+			name: "IPv6 start",
+			subnet: wgipam.Subnet{
+				Subnet: *sub6,
+				Start:  net.ParseIP("2001:db8::2"),
+			},
+			want: []string{
+				"2001:db8::2/128",
+				"2001:db8::3/128",
+			},
+		},
+		{
+			name: "IPv6 end",
+			subnet: wgipam.Subnet{
+				Subnet: *sub6,
+				End:    net.ParseIP("2001:db8::1"),
+			},
+			want: []string{
+				"2001:db8::/128",
+				"2001:db8::1/128",
+			},
+		},
+		{
+			name: "IPv6 start/end",
+			subnet: wgipam.Subnet{
+				Subnet: *sub6,
+				Start:  net.ParseIP("2001:db8::1"),
+				End:    net.ParseIP("2001:db8::2"),
+			},
+			want: []string{
+				"2001:db8::1/128",
+				"2001:db8::2/128",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnet)
+			if err != nil {
+				t.Fatalf("failed to create IPAllocator: %v", err)
+			}
+
+			// All subnets verified to use the same family.
+			f := wgipam.IPFamily(&tt.subnet.Subnet)
+
+			var got []string
+			for {
+				ips, ok, err := ipa.Allocate(f)
+				if err != nil {
+					t.Fatalf("failed to allocate IPs: %v", err)
+				}
+				if !ok {
+					break
+				}
+				if len(ips) != 1 {
+					t.Fatalf("expected 1 IP, but got: %d", len(ips))
+				}
+
+				got = append(got, ips[0].String())
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("unexpected IP addresses (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -247,7 +391,9 @@ func TestSimpleIPAllocatorFree(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnet)
+			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), wgipam.Subnet{
+				Subnet: tt.subnet,
+			})
 			if err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
@@ -266,7 +412,9 @@ func TestSimpleIPAllocatorFree(t *testing.T) {
 func TestSimpleIPAllocatorAllocateLoop(t *testing.T) {
 	t.Parallel()
 
-	ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), *wgipam.MustCIDR("192.0.2.0/30"))
+	ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), wgipam.Subnet{
+		Subnet: *wgipam.MustCIDR("192.0.2.0/30"),
+	})
 	if err != nil {
 		t.Fatalf("failed to create IPAllocator: %v", err)
 	}
