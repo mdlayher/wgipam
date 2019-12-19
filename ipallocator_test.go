@@ -25,26 +25,38 @@ import (
 var (
 	sub4 = wgipam.MustCIDR("192.0.2.0/30")
 	sub6 = wgipam.MustCIDR("2001:db8::/126")
+	ula6 = wgipam.MustCIDR("fd00:ffff::/126")
 )
 
 func TestDualStackIPAllocator(t *testing.T) {
 	t.Parallel()
 
-	contains := func(t *testing.T, ips wgipam.IPAllocator, sub *net.IPNet) {
+	contains := func(t *testing.T, ipa wgipam.IPAllocator, subs []net.IPNet) {
 		t.Helper()
 
 		// Allocate an address from the pool and verify it is contained within
 		// the input subnet.
-		ip, ok, err := ips.Allocate()
+		ips, ok, err := ipa.Allocate(wgipam.DualStack)
 		if err != nil {
-			t.Fatalf("failed to allocate from %q: %v", sub, err)
+			t.Fatalf("failed to allocate: %v", err)
 		}
 		if !ok {
-			t.Fatalf("did not allocate an IP address from %q", sub)
+			t.Fatalf("did not allocate IP addresses from %v", subs)
 		}
 
-		if !sub.Contains(ip.IP) {
-			t.Fatalf("allocated IP %q is not within subnet %q", ip, sub)
+		for _, ip := range ips {
+			// Ensure each IP address resides within one of the input subnets.
+			var found bool
+			for _, s := range subs {
+				if s.Contains(ip.IP) {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Fatalf("allocated IPs %v not within subnets %v", ips, subs)
+			}
 		}
 	}
 
@@ -52,7 +64,7 @@ func TestDualStackIPAllocator(t *testing.T) {
 		name    string
 		subnets []net.IPNet
 		ok      bool
-		check   func(t *testing.T, ip4s, ip6s wgipam.IPAllocator)
+		check   func(t *testing.T, ipa wgipam.IPAllocator)
 	}{
 		{
 			name: "no subnets",
@@ -61,33 +73,25 @@ func TestDualStackIPAllocator(t *testing.T) {
 			name:    "OK IPv4 only",
 			subnets: []net.IPNet{*sub4},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
-				if ip6s != nil {
-					t.Fatal("allocated IPv6 store but no addresses specified")
-				}
-
-				contains(t, ip4s, sub4)
+			check: func(t *testing.T, ipa wgipam.IPAllocator) {
+				contains(t, ipa, []net.IPNet{*sub4})
 			},
 		},
 		{
 			name:    "OK IPv6 only",
 			subnets: []net.IPNet{*sub6},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
-				if ip4s != nil {
-					t.Fatal("allocated IPv4 store but no addresses specified")
-				}
-
-				contains(t, ip6s, sub6)
+			check: func(t *testing.T, ipa wgipam.IPAllocator) {
+				contains(t, ipa, []net.IPNet{*sub6})
 			},
 		},
 		{
 			name:    "OK dual stack",
-			subnets: []net.IPNet{*sub4, *sub6},
+			subnets: []net.IPNet{*sub4, *sub6, *ula6},
 			ok:      true,
-			check: func(t *testing.T, ip4s wgipam.IPAllocator, ip6s wgipam.IPAllocator) {
-				contains(t, ip4s, sub4)
-				contains(t, ip6s, sub6)
+			check: func(t *testing.T, ipa wgipam.IPAllocator) {
+				// Should get an address from each input subnet.
+				contains(t, ipa, []net.IPNet{*sub4, *sub6, *ula6})
 			},
 		},
 	}
@@ -97,7 +101,7 @@ func TestDualStackIPAllocator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ip4s, ip6s, err := wgipam.DualStackIPAllocator(wgipam.MemoryStore(), tt.subnets)
+			ipa, err := wgipam.DualStackIPAllocator(wgipam.MemoryStore(), tt.subnets)
 			if tt.ok && err != nil {
 				t.Fatalf("failed to create IPAllocators: %v", err)
 			}
@@ -108,55 +112,42 @@ func TestDualStackIPAllocator(t *testing.T) {
 				return
 			}
 
-			tt.check(t, ip4s, ip6s)
+			tt.check(t, ipa)
 		})
 	}
 }
 
-func TestIPAllocatorAllocate(t *testing.T) {
+func TestSimpleIPAllocatorAllocate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		subnets []net.IPNet
-		ok      bool
-		check   func(t *testing.T, ipn *net.IPNet)
+		name   string
+		subnet net.IPNet
+		check  func(t *testing.T, ipn *net.IPNet)
 	}{
+
 		{
-			name: "no IPs",
-		},
-		{
-			name:    "mixed IPv4",
-			subnets: []net.IPNet{*sub4, *sub6},
-		},
-		{
-			name:    "mixed IPv6",
-			subnets: []net.IPNet{*sub6, *sub4},
-		},
-		{
-			name:    "IPv4",
-			subnets: []net.IPNet{*sub4},
-			ok:      true,
+			name:   "IPv4",
+			subnet: *sub4,
 			check: func(t *testing.T, ipn *net.IPNet) {
 				if ipn.IP.To4() == nil {
 					t.Fatalf("not an IPv4 address: %v", ipn.IP)
 				}
 
-				if diff := cmp.Diff(sub4.Mask, ipn.Mask); diff != "" {
+				if diff := cmp.Diff(net.CIDRMask(32, 32), ipn.Mask); diff != "" {
 					t.Fatalf("unexpected CIDR mask (-want +got):\n%s", diff)
 				}
 			},
 		},
 		{
-			name:    "IPv6",
-			subnets: []net.IPNet{*sub6},
-			ok:      true,
+			name:   "IPv6",
+			subnet: *sub6,
 			check: func(t *testing.T, ipn *net.IPNet) {
 				if ipn.IP.To4() != nil {
 					t.Fatalf("not an IPv6 address: %v", ipn.IP)
 				}
 
-				if diff := cmp.Diff(sub6.Mask, ipn.Mask); diff != "" {
+				if diff := cmp.Diff(net.CIDRMask(128, 128), ipn.Mask); diff != "" {
 					t.Fatalf("unexpected CIDR mask (-want +got):\n%s", diff)
 				}
 			},
@@ -168,37 +159,32 @@ func TestIPAllocatorAllocate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
-			if tt.ok && err != nil {
+			ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnet)
+			if err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
-			if !tt.ok && err == nil {
-				t.Fatal("expected an error, but none occurred")
-			}
-			if err != nil {
-				return
-			}
+
+			// All subnets verified to use the same family.
+			f := wgipam.IPFamily(&tt.subnet)
 
 			var ipns []*net.IPNet
 			for {
-				ip, ok, err := ips.Allocate()
+				ips, ok, err := ipa.Allocate(f)
 				if err != nil {
 					t.Fatalf("failed to allocate IPs: %v", err)
 				}
 				if !ok {
 					break
 				}
+				if len(ips) != 1 {
+					t.Fatalf("expected 1 IP, but got: %d", len(ips))
+				}
 
-				tt.check(t, ip)
-				ipns = append(ipns, ip)
+				tt.check(t, ips[0])
+				ipns = append(ipns, ips...)
 			}
 
-			want := make([]ipaddr.Prefix, 0, len(tt.subnets))
-			for _, s := range tt.subnets {
-				// Capture the range variable to get a unique pointer.
-				s := s
-				want = append(want, *ipaddr.NewPrefix(&s))
-			}
+			want := []ipaddr.Prefix{*ipaddr.NewPrefix(&tt.subnet)}
 
 			var got []ipaddr.Prefix
 			if len(ipns) > 0 {
@@ -211,7 +197,7 @@ func TestIPAllocatorAllocate(t *testing.T) {
 
 			// Ensure all the addresses are freed as well.
 			for _, ipn := range ipns {
-				if err := ips.Free(ipn); err != nil {
+				if err := ipa.Free(ipn); err != nil {
 					t.Fatalf("failed to free IP address: %v", err)
 				}
 			}
@@ -219,18 +205,18 @@ func TestIPAllocatorAllocate(t *testing.T) {
 	}
 }
 
-func TestIPAllocatorFree(t *testing.T) {
+func TestSimpleIPAllocatorFree(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		subnets []net.IPNet
-		alloc   func(t *testing.T, ips wgipam.IPAllocator) *net.IPNet
-		ok      bool
+		name   string
+		subnet net.IPNet
+		alloc  func(t *testing.T, ips wgipam.IPAllocator) *net.IPNet
+		ok     bool
 	}{
 		{
-			name:    "not allocated",
-			subnets: []net.IPNet{*sub4},
+			name:   "not allocated",
+			subnet: *sub4,
 			alloc: func(_ *testing.T, _ wgipam.IPAllocator) *net.IPNet {
 				// Allocate a random address outside of sub4.
 				return wgipam.MustCIDR("192.0.2.1/32")
@@ -238,11 +224,11 @@ func TestIPAllocatorFree(t *testing.T) {
 			ok: true,
 		},
 		{
-			name:    "allocated",
-			subnets: []net.IPNet{*sub6},
-			alloc: func(t *testing.T, ips wgipam.IPAllocator) *net.IPNet {
+			name:   "allocated",
+			subnet: *sub6,
+			alloc: func(t *testing.T, ipa wgipam.IPAllocator) *net.IPNet {
 				// Allocate directly from sub6.
-				ip, ok, err := ips.Allocate()
+				ips, ok, err := ipa.Allocate(wgipam.IPv6)
 				if err != nil {
 					t.Fatalf("failed to allocate IPs: %v", err)
 				}
@@ -250,7 +236,7 @@ func TestIPAllocatorFree(t *testing.T) {
 					t.Fatal("out of IP addresses")
 				}
 
-				return ip
+				return ips[0]
 			},
 			ok: true,
 		},
@@ -261,7 +247,7 @@ func TestIPAllocatorFree(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnets)
+			ips, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), tt.subnet)
 			if err != nil {
 				t.Fatalf("failed to create IPAllocator: %v", err)
 			}
@@ -280,9 +266,7 @@ func TestIPAllocatorFree(t *testing.T) {
 func TestSimpleIPAllocatorAllocateLoop(t *testing.T) {
 	t.Parallel()
 
-	sub := wgipam.MustCIDR("192.0.2.0/30")
-
-	ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), []net.IPNet{*sub})
+	ipa, err := wgipam.SimpleIPAllocator(wgipam.MemoryStore(), *wgipam.MustCIDR("192.0.2.0/30"))
 	if err != nil {
 		t.Fatalf("failed to create IPAllocator: %v", err)
 	}
@@ -291,19 +275,22 @@ func TestSimpleIPAllocatorAllocateLoop(t *testing.T) {
 	// internal cursor should continue looping and handing out addresses which
 	// are free at the beginning of the subnet.
 	for i := 0; i < 16; i++ {
-		ip, ok, err := ipa.Allocate()
+		ips, ok, err := ipa.Allocate(wgipam.IPv4)
 		if err != nil {
 			t.Fatalf("failed to allocate IPs: %v", err)
 		}
 		if !ok {
 			t.Fatal("ran out of IPs")
 		}
+		if len(ips) != 1 {
+			t.Fatalf("expected 1 IP, but got: %d", len(ips))
+		}
 
-		if diff := cmp.Diff(i%4, int(ip.IP.To4()[3])); diff != "" {
+		if diff := cmp.Diff(i%4, int(ips[0].IP.To4()[3])); diff != "" {
 			t.Fatalf("unexpected final IP address octet (-want +got):\n%s", diff)
 		}
 
-		if err := ipa.Free(ip); err != nil {
+		if err := ipa.Free(ips[0]); err != nil {
 			t.Fatalf("failed to free IP address: %v", err)
 		}
 	}

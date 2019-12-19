@@ -15,6 +15,7 @@ package wgipam
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 
@@ -22,16 +23,30 @@ import (
 )
 
 var (
+	_ IPAllocator = &multiIPAllocator{}
 	_ IPAllocator = &simpleIPAllocator{}
 )
 
-// An IPAllocator can allocate IP addresses. IPAllocator implementations should
-// be configured to only return IPv4 or IPv6 addresses: never both from the same
-// instance.
+// A Family specifies one or more IP address families, such as IPv4, IPv6,
+// or DualStack.
+type Family int
+
+//go:generate stringer -type=Family -output=string.go
+
+// List of possible Family values.
+const (
+	_ Family = iota
+	IPv4
+	IPv6
+	DualStack
+)
+
+// An IPAllocator can allocate IP addresses from one or more subnets.
 type IPAllocator interface {
-	// Allocate allocates the next available IP address. It returns false
-	// if no more IP addresses are available.
-	Allocate() (ip *net.IPNet, ok bool, err error)
+	// Allocate allocates an available IP address from each underlying subnet
+	// which matches the input Family. It returns false if one or more of the
+	// subnets ran out of IP addresses during allocation.
+	Allocate(family Family) (ips []*net.IPNet, ok bool, err error)
 
 	// Free returns an allocated IP address to the IPAllocator. Free operations
 	// should be idempotent; that is, an error should only be returned if the
@@ -40,22 +55,20 @@ type IPAllocator interface {
 	Free(ip *net.IPNet) error
 }
 
-// A simpleIPAllocator is an IPAllocator that allocates addresses in order by
-// iterating through its input subnets.
-type simpleIPAllocator struct {
-	s       Store
-	mu      sync.Mutex
-	c       *ipaddr.Cursor
-	subnets []net.IPNet
+// A multiIPAllocator is an IPAllocator that wraps several internal IPAllocators,
+// so different allocations strategies may be used for different IP families.
+type multiIPAllocator struct {
+	s Store
+	m map[Family][]IPAllocator
 }
 
-// DualStackIPAllocator returns two IPAllocators for each IPv4 and IPv6 address
-// allocation. It is a convenience wrapper around NewIPAllocator that
-// automatically allocates the input subnets into the appropriate IPAllocator.
-func DualStackIPAllocator(store Store, subnets []net.IPNet) (ip4s, ip6s IPAllocator, err error) {
+// DualStackIPAllocator returns an IPAllocator which can allocate both IPv4 and
+// IPv6 addresses. It is a convenience wrapper around other IPAllocators that
+// automatically allocates addresses from the input subnets as appropriate.
+func DualStackIPAllocator(store Store, subnets []net.IPNet) (IPAllocator, error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
-		return nil, nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
+		return nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
 	}
 
 	// Split subnets by family and create IPAllocators for each.
@@ -68,63 +81,153 @@ func DualStackIPAllocator(store Store, subnets []net.IPNet) (ip4s, ip6s IPAlloca
 		}
 	}
 
-	if len(sub4) > 0 {
-		ips, err := SimpleIPAllocator(store, sub4)
-		if err != nil {
-			return nil, nil, err
-		}
-		ip4s = ips
+	mia := &multiIPAllocator{
+		s: store,
+		m: make(map[Family][]IPAllocator, 0),
 	}
 
-	if len(sub6) > 0 {
-		ips, err := SimpleIPAllocator(store, sub6)
+	// Each subnet gets its own IPAllocator.
+
+	for _, s := range sub4 {
+		ipa, err := SimpleIPAllocator(store, s)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		ip6s = ips
+
+		mia.m[IPv4] = append(mia.m[IPv4], ipa)
 	}
 
-	return ip4s, ip6s, nil
+	for _, s := range sub6 {
+		ipa, err := SimpleIPAllocator(store, s)
+		if err != nil {
+			return nil, err
+		}
+
+		mia.m[IPv6] = append(mia.m[IPv6], ipa)
+	}
+
+	return mia, nil
+}
+
+// An ipaPair is a tuple of Family and IPAllocator.
+type ipaPair struct {
+	f  Family
+	as []IPAllocator
+}
+
+// Allocate implements IPAllocator.
+func (mia *multiIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) {
+	// Determine which IPAllocators should be consulted based on the input
+	// Family value.
+	var pairs []ipaPair
+	switch family {
+	case IPv4, IPv6:
+		pairs = append(pairs, ipaPair{
+			f:  family,
+			as: mia.m[family],
+		})
+	case DualStack:
+		pairs = append(pairs, ipaPair{
+			f:  IPv4,
+			as: mia.m[IPv4],
+		})
+		pairs = append(pairs, ipaPair{
+			f:  IPv6,
+			as: mia.m[IPv6],
+		})
+	default:
+		panicf("wgipam: invalid IP Family value: %#v", family)
+	}
+
+	ips, ok, err := mia.tryAllocate(pairs)
+	if err != nil || !ok {
+		// Allocation failed due to error or running out of addresses, but
+		// tryAllocate returns whatever addresses it allocated along the way
+		// so we can free them now.
+		for _, ip := range ips {
+			if ferr := mia.Free(ip); ferr != nil {
+				return nil, false, fmt.Errorf("failed to free IP address %s: %v, original error: %v", ip, ferr, err)
+			}
+		}
+
+		return nil, ok, err
+	}
+
+	return ips, true, nil
+}
+
+// tryAllocate attempts to allocate addresses using the given ipaPairs, returning
+// any addresses it was able to allocate along with any errors.
+func (mia *multiIPAllocator) tryAllocate(pairs []ipaPair) ([]*net.IPNet, bool, error) {
+	// All returns in this function _must_ return out for cleanup to work.
+	var out []*net.IPNet
+
+	for _, p := range pairs {
+		for _, ipa := range p.as {
+			ips, ok, err := ipa.Allocate(p.f)
+			if err != nil {
+				return out, false, err
+			}
+			if !ok {
+				return out, false, nil
+			}
+
+			out = append(out, ips...)
+		}
+	}
+
+	if len(out) == 0 {
+		// Nothing allocated, out of addresses.
+		return out, false, nil
+	}
+
+	return out, true, nil
+}
+
+// Free implements IPAllocator.
+func (mia *multiIPAllocator) Free(ip *net.IPNet) error {
+	// Delegate directly to the appropriate Family's IPAllocators and try to
+	// remove the address from each subnet.
+	for _, ipa := range mia.m[ipFamily(ip)] {
+		if err := ipa.Free(ip); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// A simpleIPAllocator is an IPAllocator that allocates addresses in order by
+// iterating through its input subnets.
+type simpleIPAllocator struct {
+	f      Family
+	s      Store
+	mu     sync.Mutex
+	c      *ipaddr.Cursor
+	subnet *net.IPNet
 }
 
 // SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
-// by iterating through its subnets. The input subnets must use a single IP
-// address family: either IPv4 or IPv6 exclusively.
-func SimpleIPAllocator(store Store, subnets []net.IPNet) (IPAllocator, error) {
-	if len(subnets) == 0 {
-		return nil, errors.New("wgipam: NewIPAllocator requires one or more subnets")
-	}
-
-	ps := make([]ipaddr.Prefix, 0, len(subnets))
-	var isIPv6 bool
-	for i, s := range subnets {
-		// Do not allow mixed address families.
-		if i == 0 {
-			isIPv6 = s.IP.To4() == nil
-		}
-
-		if (isIPv6 && s.IP.To4() != nil) || (!isIPv6 && s.IP.To4() == nil) {
-			return nil, errors.New("wgipam: all IPAllocator subnets must be the same address family")
-		}
-
-		// Capture the range variable to get a unique pointer and register this
-		// subnet with our Store for later use.
-		s := s
-		ps = append(ps, *ipaddr.NewPrefix(&s))
-		if err := store.SaveSubnet(&s); err != nil {
-			return nil, err
-		}
+// by iterating through addresses in a subnet.
+func SimpleIPAllocator(store Store, subnet net.IPNet) (IPAllocator, error) {
+	if err := store.SaveSubnet(&subnet); err != nil {
+		return nil, err
 	}
 
 	return &simpleIPAllocator{
-		s:       store,
-		c:       ipaddr.NewCursor(ps),
-		subnets: subnets,
+		f:      ipFamily(&subnet),
+		s:      store,
+		c:      ipaddr.NewCursor([]ipaddr.Prefix{*ipaddr.NewPrefix(&subnet)}),
+		subnet: &subnet,
 	}, nil
 }
 
 // Allocate implements IPAllocator.
-func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
+func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) {
+	if family != s.f {
+		return nil, false, fmt.Errorf("wgipam: IPAllocator for subnet %s only manages %s addresses", s.subnet, s.f)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,7 +251,7 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 		// until we reach a free address or run out of IPs.
 		ip := &net.IPNet{
 			IP:   p.IP,
-			Mask: p.Prefix.Mask,
+			Mask: ipMask(&p.Prefix.IPNet),
 		}
 
 		ok, err := s.s.AllocateIP(&p.Prefix.IPNet, ip)
@@ -157,25 +260,43 @@ func (s *simpleIPAllocator) Allocate() (*net.IPNet, bool, error) {
 		}
 		if ok {
 			// Address successfully allocated.
-			return ip, true, nil
+			return []*net.IPNet{ip}, true, nil
 		}
 	}
 }
 
 // Free implements IPAllocator.
 func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, sub := range s.subnets {
-		if !sub.Contains(ip.IP) {
-			continue
-		}
-
-		if err := s.s.FreeIP(&sub, ip); err != nil {
-			return err
-		}
+	if !s.subnet.Contains(ip.IP) {
+		return nil
 	}
 
-	return nil
+	return s.s.FreeIP(s.subnet, ip)
+}
+
+func ipMask(ip *net.IPNet) net.IPMask {
+	switch f := ipFamily(ip); f {
+	case IPv4:
+		return net.CIDRMask(32, 32)
+	case IPv6:
+		return net.CIDRMask(128, 128)
+	default:
+		panicf("wgipam: invalid family for %s IP mask: %s", ip, f)
+	}
+
+	panic("unreachable")
+}
+
+// ipFamily returns the Family value for ip.
+func ipFamily(ip *net.IPNet) Family {
+	switch {
+	case ip.IP.To16() != nil && ip.IP.To4() != nil:
+		return IPv4
+	case ip.IP.To16() != nil && ip.IP.To4() == nil:
+		return IPv6
+	default:
+		panicf("wgipam: invalid IP address: %v", ip)
+	}
+
+	panic("unreachable")
 }

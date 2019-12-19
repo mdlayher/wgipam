@@ -234,7 +234,7 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 		t.Fatalf("failed to save subnet: %v", err)
 	}
 
-	ip4a, ip6a, err := wgipam.DualStackIPAllocator(s, []net.IPNet{
+	ipa, err := wgipam.DualStackIPAllocator(s, []net.IPNet{
 		*okSubnet4, *okSubnet6,
 	})
 	if err != nil {
@@ -249,25 +249,17 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 
 	var want *wgipam.Lease
 	for i := 0; i < 3; i++ {
-		ip4, ok, err := ip4a.Allocate()
+		ips, ok, err := ipa.Allocate(wgipam.DualStack)
 		if err != nil {
-			t.Fatalf("failed to allocate IPv4: %v", err)
+			t.Fatalf("failed to allocate IPs: %v", err)
 		}
 		if !ok {
-			t.Fatal("ran out of IPv4 addresses")
-		}
-
-		ip6, ok, err := ip6a.Allocate()
-		if err != nil {
-			t.Fatalf("failed to allocate IPv6: %v", err)
-		}
-		if !ok {
-			t.Fatal("ran out of IPv6 addresses")
+			t.Fatal("ran out of IP addresses")
 		}
 
 		// Create leases which start at regular intervals.
 		l := &wgipam.Lease{
-			IPs:    []*net.IPNet{ip4, ip6},
+			IPs:    ips,
 			Start:  time.Unix((int64(i)+1)*start, 0),
 			Length: length * time.Second,
 		}

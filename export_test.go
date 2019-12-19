@@ -26,6 +26,9 @@ func TimeNow() time.Time { return timeNow() }
 // StrKey wraps strKey.
 func StrKey(s string) uint64 { return strKey(s) }
 
+// IPFamily wraps ipFamily.
+func IPFamily(ip *net.IPNet) Family { return ipFamily(ip) }
+
 // MustCIDR parses s as a *net.IPNet or panics.
 func MustCIDR(s string) *net.IPNet {
 	_, ipn, err := net.ParseCIDR(s)

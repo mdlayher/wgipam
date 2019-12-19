@@ -147,20 +147,20 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 		subnets = append(subnets, *s.Subnet)
 	}
 
-	logf("listening on %q, serving: %s",
-		l.Addr(), subnetsString(subnets))
+	logf("listening on %q, lease duration: %s, serving: %s",
+		l.Addr(), ifi.LeaseDuration, subnetsString(subnets))
 
-	ip4s, ip6s, err := wgipam.DualStackIPAllocator(store, subnets)
+	ipa, err := wgipam.DualStackIPAllocator(store, subnets)
 	if err != nil {
 		return fmt.Errorf("failed to create IP allocator: %v", err)
 	}
 
 	h := &wgipam.Handler{
-		Log:     s.ll,
-		IPv4:    ip4s,
-		IPv6:    ip6s,
-		Leases:  store,
-		Metrics: wgipam.NewHandlerMetrics(s.reg, ifi.Name),
+		Leases:        store,
+		IPs:           ipa,
+		LeaseDuration: ifi.LeaseDuration,
+		Log:           s.ll,
+		Metrics:       wgipam.NewHandlerMetrics(s.reg, ifi.Name),
 	}
 
 	srv := &wgdynamic.Server{
