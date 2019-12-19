@@ -81,9 +81,8 @@ func (p *kvParser) String() string {
 	return p.v
 }
 
-// IPNet parses the current value as a *net.IPNet of the specified family. Only
-// families 4 and 6 are valid.
-func (p *kvParser) IPNet(family int) *net.IPNet {
+// IPNet parses the current value as a *net.IPNet.
+func (p *kvParser) IPNet() *net.IPNet {
 	if p.err != nil {
 		return nil
 	}
@@ -98,22 +97,6 @@ func (p *kvParser) IPNet(family int) *net.IPNet {
 	// subnet mask, so replace the first network address with the actual IP
 	// address.
 	ipn.IP = ip
-
-	// Verify correct address family using net.IP.To4, per the documentation.
-	switch family {
-	case 4:
-		if ipn.IP.To4() == nil {
-			p.err = fmt.Errorf("wgdynamic: bad IPv4 CIDR: %q", p.v)
-			return nil
-		}
-	case 6:
-		if ipn.IP.To4() != nil {
-			p.err = fmt.Errorf("wgdynamic: bad IPv6 CIDR: %q", p.v)
-			return nil
-		}
-	default:
-		panicf("wgdynamic: bad IPNet family parameter: %d", family)
-	}
 
 	return ipn
 }

@@ -107,7 +107,7 @@ func (s *Server) Close() error {
 
 // handle handles an individual request. handle should be called in a goroutine.
 func (s *Server) handle(c net.Conn) {
-	p, cmd, err := parse(c)
+	p, cmd, err := parseRequest(c)
 	if err != nil {
 		s.logf("%s: error parsing request: %v", c.RemoteAddr().String(), err)
 		return
@@ -157,7 +157,7 @@ func (s *Server) handleRequestIP(c net.Conn, p *kvParser) error {
 		return err
 	}
 
-	return sendRequestIP(c, res)
+	return sendRequestIP(c, fromServer, res)
 }
 
 // logf creates a formatted log entry if s.Log is not nil.

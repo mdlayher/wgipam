@@ -136,8 +136,8 @@ func TestServerRun(t *testing.T) {
 				// works and started successfully. This will also populate
 				// some Prometheus metrics for validation.
 				res := requestIP(t, srv)
-				if diff := cmp.Diff(host, res.IPv6); diff != "" {
-					t.Fatalf("unexpected leased IPv6 address (-want +got):\n%s", diff)
+				if diff := cmp.Diff([]*net.IPNet{host}, res.IPs); diff != "" {
+					t.Fatalf("unexpected leased IPv6 addresses (-want +got):\n%s", diff)
 				}
 
 				prom := httpGet(t, debug+"/metrics")

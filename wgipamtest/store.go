@@ -27,8 +27,7 @@ import (
 // Populated fixtures for use in tests.
 var (
 	okLease = &wgipam.Lease{
-		IPv4:   mustCIDR("192.0.2.0/32"),
-		IPv6:   mustCIDR("2001:db8::/128"),
+		IPs:    []*net.IPNet{mustCIDR("192.0.2.0/32"), mustCIDR("2001:db8::/128")},
 		Start:  time.Unix(1, 0),
 		Length: 10 * time.Second,
 	}
@@ -268,8 +267,7 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 
 		// Create leases which start at regular intervals.
 		l := &wgipam.Lease{
-			IPv4:   ip4,
-			IPv6:   ip6,
+			IPs:    []*net.IPNet{ip4, ip6},
 			Start:  time.Unix((int64(i)+1)*start, 0),
 			Length: length * time.Second,
 		}
@@ -310,7 +308,7 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 		t.Fatalf("failed to get allocated IPv4s: %v", err)
 	}
 
-	if diff := cmp.Diff([]*net.IPNet{want.IPv4}, ip4s); diff != "" {
+	if diff := cmp.Diff([]*net.IPNet{want.IPs[0]}, ip4s); diff != "" {
 		t.Fatalf("unexpected remaining IPv4 allocation (-want +got):\n%s", diff)
 	}
 
@@ -319,7 +317,7 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 		t.Fatalf("failed to get allocated IPv6s: %v", err)
 	}
 
-	if diff := cmp.Diff([]*net.IPNet{want.IPv6}, ip6s); diff != "" {
+	if diff := cmp.Diff([]*net.IPNet{want.IPs[1]}, ip6s); diff != "" {
 		t.Fatalf("unexpected remaining IPv6 allocation (-want +got):\n%s", diff)
 	}
 }

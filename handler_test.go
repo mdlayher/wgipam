@@ -16,6 +16,7 @@ package wgipam_test
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -40,8 +41,7 @@ func TestHandlerRequestIP(t *testing.T) {
 		}
 
 		ripDualStack = &wgdynamic.RequestIP{
-			IPv4:      sub4,
-			IPv6:      sub6,
+			IPs:       []*net.IPNet{sub4, sub6},
 			LeaseTime: 10 * time.Second,
 		}
 	)
@@ -52,11 +52,6 @@ func TestHandlerRequestIP(t *testing.T) {
 		rip  *wgdynamic.RequestIP
 		err  *wgdynamic.Error
 	}{
-		{
-			name: "out of IPs",
-			h:    &wgipam.Handler{},
-			err:  errOutOfIPs,
-		},
 		{
 			name: "out of IPv4",
 			h: func() *wgipam.Handler {
@@ -87,7 +82,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			name: "OK IPv4",
 			h:    mustHandler([]net.IPNet{*sub4}),
 			rip: &wgdynamic.RequestIP{
-				IPv4:      sub4,
+				IPs:       []*net.IPNet{sub4},
 				LeaseTime: 10 * time.Second,
 			},
 		},
@@ -95,7 +90,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			name: "OK IPv6",
 			h:    mustHandler([]net.IPNet{*sub6}),
 			rip: &wgdynamic.RequestIP{
-				IPv6:      sub6,
+				IPs:       []*net.IPNet{sub6},
 				LeaseTime: 10 * time.Second,
 			},
 		},
@@ -103,17 +98,6 @@ func TestHandlerRequestIP(t *testing.T) {
 			name: "OK dual stack",
 			h:    mustHandler([]net.IPNet{*sub4, *sub6}),
 			rip:  ripDualStack,
-		},
-		{
-			name: "OK dual stack no leases",
-			h: func() *wgipam.Handler {
-				h := mustHandler([]net.IPNet{*sub4, *sub6})
-
-				// Leases explicitly disabled.
-				h.Leases = nil
-				return h
-			}(),
-			rip: ripDualStack,
 		},
 		{
 			name: "OK dual stack with lease",
@@ -125,8 +109,7 @@ func TestHandlerRequestIP(t *testing.T) {
 				// allocation logic can kick in.
 				h.NewRequest = func(src net.Addr) {
 					l := &wgipam.Lease{
-						IPv4:   sub4,
-						IPv6:   sub6,
+						IPs:    []*net.IPNet{sub4, sub6},
 						Start:  wgipam.TimeNow(),
 						Length: 10 * time.Second,
 					}
@@ -152,7 +135,7 @@ func TestHandlerRequestIP(t *testing.T) {
 					l := &wgipam.Lease{
 						// Use an address that will not be allocated by our
 						// configuration and verify it is removed.
-						IPv4:   wgipam.MustCIDR("192.0.2.255/32"),
+						IPs:    []*net.IPNet{wgipam.MustCIDR("192.0.2.255/32")},
 						Start:  time.Unix(1, 0),
 						Length: 10 * time.Second,
 					}
@@ -193,6 +176,8 @@ func TestHandlerRequestIP(t *testing.T) {
 				return
 			}
 
+			log.Printf("%#v", rip)
+
 			// Equality with time is tricky, so just make sure the lease was
 			// created recently and then do an exact comparison after clearing
 			// the start time.
@@ -205,11 +190,6 @@ func TestHandlerRequestIP(t *testing.T) {
 				t.Fatalf("unexpected RequestIP (-want +got):\n%s", diff)
 			}
 
-			// Ensure a lease was populated if leases are in use.
-			if tt.h.Leases == nil {
-				return
-			}
-
 			leases, err := tt.h.Leases.Leases()
 			if err != nil {
 				t.Fatalf("failed to get leases: %v", err)
@@ -220,8 +200,7 @@ func TestHandlerRequestIP(t *testing.T) {
 			// ultimately care mostly about the addresses assigned and the
 			// duration.
 			want := []*wgipam.Lease{{
-				IPv4:   rip.IPv4,
-				IPv6:   rip.IPv6,
+				IPs:    rip.IPs,
 				Length: rip.LeaseTime,
 			}}
 

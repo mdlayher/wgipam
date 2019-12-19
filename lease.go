@@ -22,15 +22,15 @@ import (
 
 // A Lease is a record of allocated IP addresses assigned to a client.
 type Lease struct {
-	IPv4, IPv6 *net.IPNet
-	Start      time.Time
-	Length     time.Duration
+	IPs    []*net.IPNet
+	Start  time.Time
+	Length time.Duration
 }
 
 // String returns a string suitable for logging.
 func (l *Lease) String() string {
-	return fmt.Sprintf("IPv4: %s, IPv6: %s, start: %s, end: %s",
-		l.IPv4, l.IPv6,
+	return fmt.Sprintf("IPs: %v, start: %s, end: %s",
+		l.IPs,
 		// time.Stamp seems to be reasonably readable.
 		l.Start.Format(time.Stamp),
 		l.Start.Add(l.Length).Format(time.Stamp),

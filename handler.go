@@ -25,16 +25,16 @@ import (
 
 // A Handler handles IP allocation requests using the wg-dynamic protocol.
 type Handler struct {
-	// Log specifies a logger for the Server. If nil, all logs are discarded.
-	Log *log.Logger
+	// Leases specifies a Store for Lease storage. Leases must be non-nil or
+	// the Handler will panic.
+	Leases Store
 
 	// IPv4 and IPv6 specify IPStores for IPv4 and IPv6 addresses, respectively.
 	// If either are nil, addresses will not be allocated for that family.
 	IPv4, IPv6 IPAllocator
 
-	// Leases specifies a Store for Lease storage. If nil, Leases are not
-	// used, and all incoming requests will allocate new IP addresses.
-	Leases Store
+	// Log specifies a logger for the Server. If nil, all logs are discarded.
+	Log *log.Logger
 
 	// Metrics specifies Prometheus metrics for the Handler. If nil, metrics
 	// are not collected.
@@ -79,17 +79,6 @@ func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 }
 
 func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
-	if h.Leases == nil {
-		// Lease store is not configured, always allocate new addresses.
-		res, err := h.allocate(src, req)
-		if err != nil {
-			return nil, err
-		}
-
-		h.logf(src, "leases not configured, allocating ephemeral IP addresses: IPv4: %s, IPv6: %s", res.IPv4, res.IPv6)
-		return res, nil
-	}
-
 	// Check for an existing lease.
 	key := strKey(src.String())
 	l, ok, err := h.Leases.Lease(key)
@@ -115,73 +104,29 @@ func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 	if err := h.Leases.DeleteLease(key); err != nil {
 		h.logf(src, "failed to delete lease %s: %v", l, err)
 	}
-	if err := free(h.IPv4, l.IPv4); err != nil {
-		h.logf(src, "failed to free IPv4 address %s: %v", l.IPv4, err)
-	}
-	if err := free(h.IPv6, l.IPv6); err != nil {
-		h.logf(src, "failed to free IPv6 address %s: %v", l.IPv6, err)
+	if err := h.free(l.IPs); err != nil {
+		h.logf(src, "failed to free IP addresses %v: %v", l.IPs, err)
 	}
 
 	return h.newLease(src, req)
 }
 
-// allocate handles new IP address allocation.
-func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
-	// TODO(mdlayher): honor requests for specific IP addresses.
-
-	ip4, ok4, err := allocate(h.IPv4)
-	if err != nil {
-		return nil, err
-	}
-	ip6, ok6, err := allocate(h.IPv6)
-	if err != nil {
-		return nil, err
-	}
-
-	// If no pools are configured, or either pool is configured and runs out
-	// of addresses, return a protocol error.
-	if h.IPv4 == nil && h.IPv6 == nil ||
-		(h.IPv4 != nil && !ok4) ||
-		(h.IPv6 != nil && !ok6) {
-		h.logf(src, "out of IP addresses")
-
-		// We must also free the address of the other pool in case just one of
-		// the address family pools was empty.
-		if err := free(h.IPv4, ip4); err != nil {
-			// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-			h.logf(src, "failed to free temporarily allocated IPv4 address %s: %v", ip4, err)
-		}
-		if err := free(h.IPv6, ip6); err != nil {
-			// TODO(mdlayher): better error handling, Prometheus metrics, etc.
-			h.logf(src, "failed to free temporarily allocated IPv6 address %s: %v", ip6, err)
-		}
-
-		return nil, &wgdynamic.Error{
-			Number:  1,
-			Message: "out of IP addresses",
-		}
-	}
-
-	return &wgdynamic.RequestIP{
-		IPv4:       ip4,
-		IPv6:       ip6,
-		LeaseStart: timeNow(),
-		LeaseTime:  10 * time.Second,
-	}, nil
-}
-
-// newLease creates a new Lease for a client.
 func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
-	res, err := h.allocate(src, req)
+	ips, err := h.allocate(src, req)
 	if err != nil {
+		// Clear any temporarily allocated IPs before returning the error to
+		// the caller.
+		if err := h.free(ips); err != nil {
+			h.logf(src, "failed to free temporarily allocated IP addresses %v: %v", ips, err)
+		}
+
 		return nil, err
 	}
 
 	l := &Lease{
-		IPv4:   res.IPv4,
-		IPv6:   res.IPv6,
-		Start:  res.LeaseStart,
-		Length: res.LeaseTime,
+		IPs:    ips,
+		Start:  timeNow(),
+		Length: 10 * time.Second,
 	}
 
 	h.logf(src, "creating new IP address lease: %s", l)
@@ -190,7 +135,11 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 		return nil, err
 	}
 
-	return res, nil
+	return &wgdynamic.RequestIP{
+		IPs:        ips,
+		LeaseStart: l.Start,
+		LeaseTime:  l.Length,
+	}, nil
 }
 
 // renewLease renews a Lease for clients who have an existing Lease.
@@ -207,8 +156,7 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 	}
 
 	return &wgdynamic.RequestIP{
-		IPv4:       l.IPv4,
-		IPv6:       l.IPv6,
+		IPs:        l.IPs,
 		LeaseStart: l.Start,
 		LeaseTime:  l.Length,
 	}, nil
@@ -254,24 +202,67 @@ func NewHandlerMetrics(reg *prometheus.Registry, ifi string) *HandlerMetrics {
 	return hm
 }
 
-// allocate allocates IP addresses from ips. If ips is nil, it returns early.
-func allocate(ips IPAllocator) (*net.IPNet, bool, error) {
-	if ips == nil {
-		// Shortcut to make calling code more concise.
-		return nil, false, nil
+// allocate allocates one or more IP addresses based on the client's request
+// and the availability of addresses in the pools.
+func (h *Handler) allocate(src net.Addr, _ *wgdynamic.RequestIP) ([]*net.IPNet, error) {
+	// TODO: honor requests for specific IP.
+
+	type poolPair struct {
+		p IPAllocator
+		s string
 	}
 
-	return ips.Allocate()
+	var ips []*net.IPNet
+	for _, p := range []poolPair{
+		{p: h.IPv4, s: "IPv4"},
+		{p: h.IPv6, s: "IPv6"},
+	} {
+		// No pool, nothing to do.
+		if p.p == nil {
+			continue
+		}
+
+		ip, ok, err := p.p.Allocate()
+		if err != nil {
+			return ips, err
+		}
+
+		if !ok {
+			h.logf(src, "out of %s addresses", p.s)
+			return ips, &wgdynamic.Error{
+				Number:  1,
+				Message: "out of IP addresses",
+			}
+		}
+
+		ips = append(ips, ip)
+	}
+
+	return ips, nil
 }
 
 // free frees an IP addresses in ips. If ips or ip are nil, it returns early.
-func free(ips IPAllocator, ip *net.IPNet) error {
-	if ips == nil || ip == nil {
-		// Shortcut to make calling code more concise.
-		return nil
+func (h *Handler) free(ips []*net.IPNet) error {
+	var pool IPAllocator
+	for _, ip := range ips {
+		if ip.IP.To16() != nil && ip.IP.To4() != nil {
+			if h.IPv4 == nil {
+				continue
+			}
+			pool = h.IPv4
+		} else {
+			if h.IPv6 == nil {
+				continue
+			}
+			pool = h.IPv6
+		}
+
+		if err := pool.Free(ip); err != nil {
+			return fmt.Errorf("failed to free %s: %v", ip, err)
+		}
 	}
 
-	return ips.Free(ip)
+	return nil
 }
 
 // logf logs a formatted message about src, if h.Log is configured.
