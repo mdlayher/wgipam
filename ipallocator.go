@@ -83,7 +83,7 @@ func DualStackIPAllocator(store Store, subnets []net.IPNet) (IPAllocator, error)
 
 	mia := &multiIPAllocator{
 		s: store,
-		m: make(map[Family][]IPAllocator, 0),
+		m: make(map[Family][]IPAllocator),
 	}
 
 	// Each subnet gets its own IPAllocator.
