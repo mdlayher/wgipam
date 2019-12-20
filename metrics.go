@@ -43,7 +43,7 @@ func NewHandlerMetrics(reg *prometheus.Registry, ifi string) *HandlerMetrics {
 			Subsystem: subsystem,
 			Name:      "requests_total",
 			Help:      "The total number of requests from clients using the wg-dynamic protocol.",
-		}, []string{"interface", "operation", "status"}).MustCurryWith(labels),
+		}, []string{"interface", "operation"}).MustCurryWith(labels),
 
 		ErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,

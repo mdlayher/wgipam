@@ -167,7 +167,7 @@ func TestServerRun(t *testing.T) {
 
 				// Check for specific metrics.
 				want := []string{
-					`wgipamd_server_requests_total{interface="eth0",operation="request_ip",status="ok"} 1`,
+					`wgipamd_server_requests_total{interface="eth0",operation="request_ip"} 1`,
 					`wgipamd_store_ips_allocated{subnet="192.0.2.10/32"} 1`,
 					`wgipamd_store_ips_allocated{subnet="2001:db8::10/128"} 1`,
 					// Don't check the timestamp.

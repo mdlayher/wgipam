@@ -55,32 +55,47 @@ type Handler struct {
 
 // RequestIP implements the wg-dynamic request_ip command.
 func (h *Handler) RequestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
+	const op = "request_ip"
+
 	if h.NewRequest != nil {
 		// Hook is active, inform the caller of this request.
 		h.NewRequest(src)
 	}
 
+	h.metrics(func() {
+		h.Metrics.RequestsTotal.WithLabelValues(op).Inc()
+	})
+
 	res, err := h.requestIP(src, req)
-	if err != nil {
-		h.metrics(func() {
-			h.Metrics.RequestsTotal.WithLabelValues("request_ip", "error").Inc()
-
-			// Note the type of error that occurs, if a protocol error is
-			// sent back to the client.
-			typ := "unknown"
-			if werr, ok := err.(*wgdynamic.Error); ok {
-				typ = werr.Message
-			}
-
-			h.Metrics.ErrorsTotal.WithLabelValues("request_ip", typ).Inc()
-		})
-		return nil, err
+	if err == nil {
+		return res, nil
 	}
 
 	h.metrics(func() {
-		h.Metrics.RequestsTotal.WithLabelValues("request_ip", "ok").Inc()
+		// Note the type of error that occurs, but if the caller didn't
+		// return a specific error type, assume it's a generic error.
+		werr, ok := err.(*wgdynamic.Error)
+		if !ok {
+			h.Metrics.ErrorsTotal.WithLabelValues(op, "generic").Inc()
+			return
+		}
+
+		var typ string
+		switch werr {
+		case wgdynamic.ErrInvalidRequest:
+			typ = "invalid_request"
+		case wgdynamic.ErrUnsupportedProtocol:
+			typ = "unsupported_protocol"
+		case wgdynamic.ErrIPUnavailable:
+			typ = "ip_unavailable"
+		default:
+			typ = "unknown"
+		}
+
+		h.Metrics.ErrorsTotal.WithLabelValues(op, typ).Inc()
 	})
-	return res, nil
+
+	return nil, err
 }
 
 func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
@@ -97,7 +112,7 @@ func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 
 	if time.Since(l.Start.Add(l.Length)) < 0 {
 		// Lease has not expired, renew it.
-		return h.renewLease(src, l)
+		return h.renewLease(src, req, l)
 	}
 
 	// Clean up data related to the existing lease and create a new one.
@@ -120,18 +135,33 @@ func (h *Handler) requestIP(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.
 }
 
 func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.RequestIP, error) {
-	// TODO: honor requests for specific IP, match client's requested families.
+	var family Family
+	if len(req.IPs) == 0 {
+		// No IPs specified, assume DualStack.
+		family = DualStack
+	} else {
+		// Determine which IP families the client would like addresses for.
+		for _, ip := range req.IPs {
+			// For the new lease logic, refuse any non-zero IP requests to
+			// force the client to retry and accept our allocation.
+			if !ip.IP.Equal(net.IPv4zero) && !ip.IP.Equal(net.IPv6zero) {
+				h.logf(src, "refusing to create new lease for address %s, informing client IP is unavailable", ip)
+				return nil, wgdynamic.ErrIPUnavailable
+			}
 
-	ips, ok, err := h.IPs.Allocate(DualStack)
+			// If multiple families are specified, bitwise OR will produce the
+			// DualStack Family value.
+			family |= ipFamily(ip)
+		}
+	}
+
+	ips, ok, err := h.IPs.Allocate(family)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		h.logf(src, "out of IP addresses")
-		return nil, &wgdynamic.Error{
-			Number:  1,
-			Message: "out of IP addresses",
-		}
+		return nil, wgdynamic.ErrIPUnavailable
 	}
 
 	l := &Lease{
@@ -154,9 +184,32 @@ func (h *Handler) newLease(src net.Addr, req *wgdynamic.RequestIP) (*wgdynamic.R
 }
 
 // renewLease renews a Lease for clients who have an existing Lease.
-func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, error) {
+func (h *Handler) renewLease(src net.Addr, req *wgdynamic.RequestIP, l *Lease) (*wgdynamic.RequestIP, error) {
+	// If the client specified addresses in its request, ensure that they are
+	// either zero or match the addresses we have from the previous lease.
+	for _, ip := range req.IPs {
+		if ip.IP.Equal(net.IPv4zero) || ip.IP.Equal(net.IPv6zero) {
+			// No problem, client may have restarted and is going through the
+			// new IP flow, but we already have a lease available for them.
+			continue
+		}
+
+		// This address must be found within the leased IPs.
+		var found bool
+		for _, lip := range l.IPs {
+			if ip.IP.Equal(lip.IP) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			h.logf(src, "refusing to renew lease for address %s, informing client IP is unavailable", ip)
+			return nil, wgdynamic.ErrIPUnavailable
+		}
+	}
+
 	// We have a current lease, honor it and update its expiration time.
-	// TODO(mdlayher): lease expiration, parameterize expiration time.
 	l.Start = timeNow()
 	l.Length = h.LeaseDuration
 

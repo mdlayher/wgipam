@@ -39,7 +39,7 @@ const (
 	_ Family = iota
 	IPv4
 	IPv6
-	DualStack
+	DualStack Family = IPv4 | IPv6
 )
 
 // An IPAllocator can allocate IP addresses from one or more subnets.
