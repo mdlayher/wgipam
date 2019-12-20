@@ -41,6 +41,8 @@ github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f h1:ArNsS1n/P
 github.com/mdlayher/wgdynamic-go v0.0.0-20190924011955-9690b830b59f/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
 github.com/mdlayher/wgdynamic-go v0.0.0-20191216221752-6b79ddabe386 h1:gEjP1APXQ4w3DfRkh5MuQDIQ9NYqFprSScpYslelQpY=
 github.com/mdlayher/wgdynamic-go v0.0.0-20191216221752-6b79ddabe386/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
+github.com/mdlayher/wgdynamic-go v0.0.0-20191220140747-2e3a1792edfd h1:BPjP3+xeUMgAOgwxX0FRMdfDfR1F1Egv6ytYg2TiQd8=
+github.com/mdlayher/wgdynamic-go v0.0.0-20191220140747-2e3a1792edfd/go.mod h1:eYurpZoMZ8Tsb4cIJd4ZNivBOamnaQiw9yqf73A8krI=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721 h1:RlZweED6sbSArvlE924+mUcZuXKLBHA35U7LN621Bws=
 github.com/mikioh/ipaddr v0.0.0-20190404000644-d465c8ab6721/go.mod h1:Ickgr2WtCLZ2MDGd4Gr0geeCH5HybhRJbonOgQpvSxc=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
@@ -116,6 +118,8 @@ golang.org/x/sys v0.0.0-20191210023423-ac6580df4449 h1:gSbV7h1NRL2G1xTg/owz62CST
 golang.org/x/sys v0.0.0-20191210023423-ac6580df4449/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20191218084908-4a24b4065292 h1:Y8q0zsdcgAd+JU8VUA8p8Qv2YhuY9zevDG2ORt5qBUI=
 golang.org/x/sys v0.0.0-20191218084908-4a24b4065292/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20191219235734-af0d71d358ab h1:j8r8g0V3tVdbo274kyTmC+yEsChru2GfvdiV84wm5T8=
+golang.org/x/sys v0.0.0-20191219235734-af0d71d358ab/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=

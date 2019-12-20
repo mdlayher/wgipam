@@ -9,12 +9,6 @@ import (
 	"sync"
 )
 
-// errInternal is an unspecified internal server error.
-var errInternal = &Error{
-	Number:  1,
-	Message: "Internal server error",
-}
-
 // A Server serves wg-dynamic protocol requests.
 //
 // Each exported function field implements a specific request. If any errors
@@ -119,8 +113,7 @@ func (s *Server) handle(c net.Conn) {
 		err = s.handleRequestIP(c, p)
 	default:
 		// No such command.
-		// TODO(mdlayher): use appropriate standard error number/message.
-		err = errInternal
+		err = ErrInvalidRequest
 	}
 	if err == nil {
 		// No error handling needed.
@@ -132,19 +125,19 @@ func (s *Server) handle(c net.Conn) {
 	werr, ok := err.(*Error)
 	if !ok {
 		s.logf("%s: %q error: %v", c.RemoteAddr().String(), cmd, err)
-		werr = errInternal
+		werr = ErrInvalidRequest
 	}
 
 	// TODO(mdlayher): add serialization logic for Error type.
-	_, _ = io.WriteString(c, fmt.Sprintf("%s=1\nerrno=%d\nerrmsg=%s\n\n",
-		cmd, werr.Number, werr.Message))
+	_, _ = io.WriteString(c, fmt.Sprintf("errno=%d\nerrmsg=%s\n\n",
+		werr.Number, werr.Message))
 }
 
 // handleRequestIP processes a request_ip command.
 func (s *Server) handleRequestIP(c net.Conn, p *kvParser) error {
 	if s.RequestIP == nil {
 		// Not implemented by caller.
-		return errInternal
+		return ErrInvalidRequest
 	}
 
 	req, err := parseRequestIP(p)
