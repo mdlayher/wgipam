@@ -266,6 +266,41 @@ func TestSimpleIPAllocatorAllocateReserved(t *testing.T) {
 			},
 		},
 		{
+			name: "IPv4 reserved",
+			subnet: wgipam.Subnet{
+				Subnet: *wgipam.MustCIDR("192.0.2.0/29"),
+				Reserved: []net.IP{
+					net.IPv4(192, 0, 2, 0),
+					net.IPv4(192, 0, 2, 1),
+					net.IPv4(192, 0, 2, 3),
+					net.IPv4(192, 0, 2, 6),
+				},
+			},
+			want: []string{
+				"192.0.2.2/32",
+				"192.0.2.4/32",
+				"192.0.2.5/32",
+				"192.0.2.7/32",
+			},
+		},
+		{
+			name: "IPv4 all",
+			subnet: wgipam.Subnet{
+				Subnet: *wgipam.MustCIDR("192.0.2.0/29"),
+				Start:  net.IPv4(192, 0, 2, 1),
+				End:    net.IPv4(192, 0, 2, 5),
+				Reserved: []net.IP{
+					net.IPv4(192, 0, 2, 1),
+					net.IPv4(192, 0, 2, 3),
+				},
+			},
+			want: []string{
+				"192.0.2.2/32",
+				"192.0.2.4/32",
+				"192.0.2.5/32",
+			},
+		},
+		{
 			name: "IPv6 no reserved",
 			subnet: wgipam.Subnet{
 				Subnet: *sub6,
@@ -309,6 +344,41 @@ func TestSimpleIPAllocatorAllocateReserved(t *testing.T) {
 			want: []string{
 				"2001:db8::1/128",
 				"2001:db8::2/128",
+			},
+		},
+		{
+			name: "IPv6 reserved",
+			subnet: wgipam.Subnet{
+				Subnet: *wgipam.MustCIDR("2001:db8::/125"),
+				Reserved: []net.IP{
+					net.ParseIP("2001:db8::"),
+					net.ParseIP("2001:db8::1"),
+					net.ParseIP("2001:db8::3"),
+					net.ParseIP("2001:db8::6"),
+				},
+			},
+			want: []string{
+				"2001:db8::2/128",
+				"2001:db8::4/128",
+				"2001:db8::5/128",
+				"2001:db8::7/128",
+			},
+		},
+		{
+			name: "IPv6 all",
+			subnet: wgipam.Subnet{
+				Subnet: *wgipam.MustCIDR("2001:db8::/125"),
+				Start:  net.ParseIP("2001:db8::1"),
+				End:    net.ParseIP("2001:db8::5"),
+				Reserved: []net.IP{
+					net.ParseIP("2001:db8::1"),
+					net.ParseIP("2001:db8::3"),
+				},
+			},
+			want: []string{
+				"2001:db8::2/128",
+				"2001:db8::4/128",
+				"2001:db8::5/128",
 			},
 		},
 	}

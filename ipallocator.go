@@ -281,6 +281,22 @@ func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) 
 	for {
 		p := s.c.Pos()
 		next := s.c.Next()
+
+		// TODO: more test cases for this, and maybe move to a set for lookups.
+		for _, ip := range s.sub.Reserved {
+			// Is the current IP address reserved?
+			if p.IP.Equal(ip) {
+				// Advance the cursor once.
+				p = next
+				next = s.c.Next()
+			}
+
+			// Is a next IP available, and is that IP reserved?
+			if next != nil && next.IP.Equal(ip) {
+				next = s.c.Next()
+			}
+		}
+
 		if next == nil || (next != nil && s.end != nil && next.IP.Equal(s.end.IP)) {
 			// We have reached the end of the cursor, or the user set the end
 			// of the cursor to this point.
@@ -309,7 +325,6 @@ func (s *simpleIPAllocator) Allocate(family Family) ([]*net.IPNet, bool, error) 
 			return nil, false, err
 		}
 		if ok {
-			//log.Println(p)
 			// Address successfully allocated.
 			return []*net.IPNet{ip}, true, nil
 		}
