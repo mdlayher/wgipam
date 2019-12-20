@@ -14,6 +14,7 @@
 package wgipam
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -53,15 +54,6 @@ type IPAllocator interface {
 	// free operation fails. Attempting to free an IP that did not already exist
 	// should not return an error.
 	Free(ip *net.IPNet) error
-}
-
-// A Subnet is an IP address subnet which can be used for IP address allocations.
-// It also contains parameters which can be used to prevent certain addresses
-// from being allocated.
-type Subnet struct {
-	Subnet     net.IPNet
-	Start, End net.IP
-	Reserved   []net.IP
 }
 
 // A multiIPAllocator is an IPAllocator that wraps several internal IPAllocators,
@@ -221,6 +213,10 @@ type simpleIPAllocator struct {
 // SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
 // by iterating through addresses in a subnet.
 func SimpleIPAllocator(store Store, subnet Subnet) (IPAllocator, error) {
+	if err := subnet.Validate(); err != nil {
+		return nil, fmt.Errorf("wgipam: invalid subnet %s: %v", &subnet.Subnet, err)
+	}
+
 	if err := store.SaveSubnet(&subnet.Subnet); err != nil {
 		return nil, err
 	}
@@ -338,6 +334,50 @@ func (s *simpleIPAllocator) Free(ip *net.IPNet) error {
 	}
 
 	return s.s.FreeIP(&s.sub.Subnet, ip)
+}
+
+// A Subnet is an IP address subnet which can be used for IP address allocations.
+// It also contains parameters which can be used to prevent certain addresses
+// from being allocated.
+type Subnet struct {
+	Subnet     net.IPNet
+	Start, End net.IP
+	Reserved   []net.IP
+}
+
+// Validate verifies the correctness of a Subnet's configuration.
+func (s *Subnet) Validate() error {
+	// TODO: move the tests for this out of internal/config.
+
+	// Ensure the input subnet is a subnet and not an IP address.
+	sub := &net.IPNet{
+		IP:   s.Subnet.IP.Mask(s.Subnet.Mask),
+		Mask: s.Subnet.Mask,
+	}
+
+	if !s.Subnet.IP.Equal(sub.IP) {
+		return fmt.Errorf("must specify a subnet, not an individual IP address: %s", s.Subnet)
+	}
+
+	if s.Start != nil && !sub.Contains(s.Start) {
+		return fmt.Errorf("does not contain start range IP: %s", s.Start)
+	}
+	if s.End != nil && !sub.Contains(s.End) {
+		return fmt.Errorf("does not contain end range IP: %s", s.End)
+	}
+
+	// If both are set, ensure range start IP <= end IP.
+	if s.Start != nil && s.End != nil && bytes.Compare(s.Start, s.End) == 1 {
+		return fmt.Errorf("end range IP %s occurs before start range IP %s", s.End, s.Start)
+	}
+
+	for _, r := range s.Reserved {
+		if !sub.Contains(r) {
+			return fmt.Errorf("does not contain reserved IP: %s", r)
+		}
+	}
+
+	return nil
 }
 
 func ipMask(ip *net.IPNet) net.IPMask {

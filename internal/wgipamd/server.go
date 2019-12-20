@@ -140,22 +140,10 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 		s.ll.Println(ifi.Name + ": " + fmt.Sprintf(format, v...))
 	}
 
-	// TODO(mdlayher): pull apart the rest of this structure and make use of
-	// start/end/reserved.
-	subnets := make([]wgipam.Subnet, 0, len(ifi.Subnets))
-	for _, s := range ifi.Subnets {
-		subnets = append(subnets, wgipam.Subnet{
-			Subnet:   *s.Subnet,
-			Start:    s.Start,
-			End:      s.End,
-			Reserved: s.Reserved,
-		})
-	}
-
 	logf("listening on %q, lease duration: %s, serving: %s",
-		l.Addr(), ifi.LeaseDuration, subnetsString(subnets))
+		l.Addr(), ifi.LeaseDuration, subnetsString(ifi.Subnets))
 
-	ipa, err := wgipam.DualStackIPAllocator(store, subnets)
+	ipa, err := wgipam.DualStackIPAllocator(store, ifi.Subnets)
 	if err != nil {
 		return fmt.Errorf("failed to create IP allocator: %v", err)
 	}

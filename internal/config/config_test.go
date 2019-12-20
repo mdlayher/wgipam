@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/config"
 )
 
@@ -30,8 +31,8 @@ func TestParse(t *testing.T) {
 	okInterfaces := []config.Interface{{
 		Name:          "wg0",
 		LeaseDuration: 1 * time.Hour,
-		Subnets: []config.Subnet{{
-			Subnet: mustCIDR("192.0.2.0/24"),
+		Subnets: []wgipam.Subnet{{
+			Subnet: *mustCIDR("192.0.2.0/24"),
 		}},
 	}}
 
@@ -273,15 +274,15 @@ func TestParse(t *testing.T) {
 				Interfaces: []config.Interface{{
 					Name:          "wg0",
 					LeaseDuration: 1 * time.Hour,
-					Subnets: []config.Subnet{
+					Subnets: []wgipam.Subnet{
 						{
-							Subnet:   mustCIDR("192.0.2.0/24"),
+							Subnet:   *mustCIDR("192.0.2.0/24"),
 							Start:    mustIP("192.0.2.10"),
 							End:      mustIP("192.0.2.255"),
 							Reserved: []net.IP{mustIP("192.0.2.255")},
 						},
 						{
-							Subnet: mustCIDR("2001:db8::/64"),
+							Subnet: *mustCIDR("2001:db8::/64"),
 							Reserved: []net.IP{
 								mustIP("2001:db8::0"),
 								mustIP("2001:db8::1"),

@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/mdlayher/promtest"
 	"github.com/mdlayher/wgdynamic-go"
+	"github.com/mdlayher/wgipam"
 	"github.com/mdlayher/wgipam/internal/config"
 	"github.com/mdlayher/wgipam/internal/wgipamd"
 	"golang.org/x/sync/errgroup"
@@ -114,7 +115,7 @@ func TestServerRun(t *testing.T) {
 				},
 				Interfaces: []config.Interface{{
 					Name:    "eth0",
-					Subnets: []config.Subnet{{Subnet: host}},
+					Subnets: []wgipam.Subnet{{Subnet: *host}},
 				}},
 				Debug: config.Debug{
 					Address:    randAddr(t),

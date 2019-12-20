@@ -14,7 +14,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/mdlayher/wgipam"
 	"github.com/mikioh/ipaddr"
 )
 
@@ -63,14 +63,7 @@ type storage struct {
 type Interface struct {
 	Name          string
 	LeaseDuration time.Duration
-	Subnets       []Subnet
-}
-
-// A Subnet provides configuration for an IP address subnet.
-type Subnet struct {
-	Subnet     *net.IPNet
-	Start, End net.IP
-	Reserved   []net.IP
+	Subnets       []wgipam.Subnet
 }
 
 // A subnet is the raw TOML structure for subnet configuration.
@@ -147,7 +140,7 @@ func Parse(r io.Reader) (*Config, error) {
 			dur = d
 		}
 
-		subnets := make([]Subnet, 0, len(ifi.Subnets))
+		subnets := make([]wgipam.Subnet, 0, len(ifi.Subnets))
 		for _, s := range ifi.Subnets {
 			sub, err := parseSubnet(s)
 			if err != nil {
@@ -180,8 +173,8 @@ func parseStorage(s storage) (*Storage, error) {
 	return &Storage{File: s.File}, nil
 }
 
-// parseSubnet parses a raw subnet into a Subnet structure.
-func parseSubnet(s subnet) (*Subnet, error) {
+// parseSubnet parses a raw subnet into a wgipam.Subnet structure.
+func parseSubnet(s subnet) (*wgipam.Subnet, error) {
 	ip, sub, err := net.ParseCIDR(s.Subnet)
 	if err != nil {
 		return nil, err
@@ -196,17 +189,13 @@ func parseSubnet(s subnet) (*Subnet, error) {
 		return nil, errorf("must specify a subnet, not an individual IP address")
 	}
 
-	// start and end are optional and are only set and checked if not empty.
+	// start and end are optional and are only set if not empty.
 	var start, end net.IP
 
 	if s.Start != "" {
 		start = net.ParseIP(s.Start)
 		if start == nil {
 			return nil, errorf("invalid start range IP: %s", s.Start)
-		}
-
-		if !sub.Contains(start) {
-			return nil, errorf("does not contain start range IP: %s", start)
 		}
 	}
 
@@ -215,15 +204,6 @@ func parseSubnet(s subnet) (*Subnet, error) {
 		if end == nil {
 			return nil, errorf("invalid end range IP: %s", s.End)
 		}
-
-		if !sub.Contains(end) {
-			return nil, errorf("does not contain end range IP: %s", end)
-		}
-	}
-
-	// If both are set, ensure range start IP <= end IP.
-	if start != nil && end != nil && bytes.Compare(start, end) == 1 {
-		return nil, errorf("end range IP %s occurs before start range IP %s", end, start)
 	}
 
 	reserved := make([]net.IP, 0, len(s.Reserved))
@@ -231,10 +211,6 @@ func parseSubnet(s subnet) (*Subnet, error) {
 		res := net.ParseIP(r)
 		if res == nil {
 			return nil, errorf("invalid reserved IP: %s", r)
-		}
-
-		if !sub.Contains(res) {
-			return nil, errorf("does not contain reserved IP: %s", res)
 		}
 
 		reserved = append(reserved, res)
@@ -245,17 +221,24 @@ func parseSubnet(s subnet) (*Subnet, error) {
 		reserved = nil
 	}
 
-	return &Subnet{
-		Subnet:   sub,
+	subnet := &wgipam.Subnet{
+		Subnet:   *sub,
 		Start:    start,
 		End:      end,
 		Reserved: reserved,
-	}, nil
+	}
+
+	if err := subnet.Validate(); err != nil {
+		// No need to further annotate; we just want the subnet info.
+		return nil, errorf("%v", err)
+	}
+
+	return subnet, nil
 }
 
 // checkSubnets verifies the validity of Subnets, checking for properties such
 // as subnet overlap.
-func checkSubnets(subnets []Subnet) error {
+func checkSubnets(subnets []wgipam.Subnet) error {
 	if len(subnets) == 0 {
 		return errors.New("no subnets configured")
 	}
@@ -274,9 +257,9 @@ func checkSubnets(subnets []Subnet) error {
 	// Check if any of the configured subnets overlap.
 	for _, s1 := range subnets {
 		for _, s2 := range subnets {
-			p1, p2 := ipaddr.NewPrefix(s1.Subnet), ipaddr.NewPrefix(s2.Subnet)
+			p1, p2 := ipaddr.NewPrefix(&s1.Subnet), ipaddr.NewPrefix(&s2.Subnet)
 			if !p1.Equal(p2) && p1.Overlaps(p2) {
-				return fmt.Errorf("subnets overlap: %s and %s", s1.Subnet, s2.Subnet)
+				return fmt.Errorf("subnets overlap: %s and %s", &s1.Subnet, &s2.Subnet)
 			}
 		}
 	}
