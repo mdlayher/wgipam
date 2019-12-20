@@ -143,7 +143,9 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 	logf("listening on %q, lease duration: %s, serving: %s",
 		l.Addr(), ifi.LeaseDuration, subnetsString(ifi.Subnets))
 
-	ipa, err := wgipam.DualStackIPAllocator(store, ifi.Subnets)
+	ips := wgipam.IPStoreMetrics(s.reg, ifi.Name, ifi.Subnets, store)
+
+	ipa, err := wgipam.DualStackIPAllocator(ips, ifi.Subnets)
 	if err != nil {
 		return fmt.Errorf("failed to create IP allocator: %v", err)
 	}
@@ -176,7 +178,8 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 		tick := time.NewTicker(10 * time.Second)
 		t := time.Now()
 		for {
-			if err := store.Purge(t); err != nil {
+			// Ignore metrics; they are consumed internally.
+			if _, err := ips.Purge(t); err != nil {
 				logf("failed to purge expired data: %v", err)
 			}
 

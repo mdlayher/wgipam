@@ -14,6 +14,7 @@
 package wgipamd_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -36,7 +37,10 @@ import (
 func TestServerRun(t *testing.T) {
 	t.Parallel()
 
-	host := mustCIDR("2001:db8::10/128")
+	var (
+		host4 = mustCIDR("192.0.2.10/32")
+		host6 = mustCIDR("2001:db8::10/128")
+	)
 
 	tests := []struct {
 		name string
@@ -114,8 +118,11 @@ func TestServerRun(t *testing.T) {
 					Memory: true,
 				},
 				Interfaces: []config.Interface{{
-					Name:    "eth0",
-					Subnets: []wgipam.Subnet{{Subnet: *host}},
+					Name: "eth0",
+					Subnets: []wgipam.Subnet{
+						{Subnet: *host4},
+						{Subnet: *host6},
+					},
 				}},
 				Debug: config.Debug{
 					Address:    randAddr(t),
@@ -137,8 +144,8 @@ func TestServerRun(t *testing.T) {
 				// works and started successfully. This will also populate
 				// some Prometheus metrics for validation.
 				res := requestIP(t, srv)
-				if diff := cmp.Diff([]*net.IPNet{host}, res.IPs); diff != "" {
-					t.Fatalf("unexpected leased IPv6 addresses (-want +got):\n%s", diff)
+				if diff := cmp.Diff([]*net.IPNet{host4, host6}, res.IPs); diff != "" {
+					t.Fatalf("unexpected leased IP addresses (-want +got):\n%s", diff)
 				}
 
 				prom := httpGet(t, debug+"/metrics")
@@ -154,9 +161,25 @@ func TestServerRun(t *testing.T) {
 				}
 
 				// Validate the necessary metrics.
-				// TODO(mdlayher): check for a whitelist of known metrics.
 				if !promtest.Lint(t, b) {
 					t.Fatal("Prometheus metrics are not lint-clean")
+				}
+
+				// Check for specific metrics.
+				want := []string{
+					`wgipamd_server_requests_total{interface="eth0",operation="request_ip",status="ok"} 1`,
+					`wgipamd_store_ips_allocated{subnet="192.0.2.10/32"} 1`,
+					`wgipamd_store_ips_allocated{subnet="2001:db8::10/128"} 1`,
+					// Don't check the timestamp.
+					`wgipamd_store_last_purge{interface="eth0"}`,
+					`wgipamd_store_subnet_allocatable_size{subnet="192.0.2.10/32"} 1`,
+					`wgipamd_store_subnet_allocatable_size{subnet="2001:db8::10/128"} 1`,
+				}
+
+				for _, w := range want {
+					if !bytes.Contains(b, []byte(w)) {
+						t.Errorf("prometheus metrics do not contain %q", w)
+					}
 				}
 			},
 		},

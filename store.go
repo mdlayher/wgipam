@@ -30,12 +30,27 @@ var (
 	_ Store = &boltStore{}
 )
 
-// A Store manages Leases. To ensure compliance with the expected behaviors
-// of the Store interface, use the wgipamtest.TestStore function.
+// TODO: tidy further when overlapping interfaces are allowed in Go 1.14.
+
+// A Store manages Leases and IP allocations. To ensure compliance with the
+// expected behaviors of the Store interface, use the wgipamtest.TestStore
+// function.
 type Store interface {
 	// Close syncs and closes the Store's internal state.
 	io.Closer
 
+	// Purge purge Leases which expire on or before the specified point in time,
+	// and frees the IP addresses associated with the leases.
+	// Purge operations that specify the same point in time should be
+	// idempotent; the same rules apply as with DeleteLease.
+	Purge(t time.Time) (*PurgeStats, error)
+
+	LeaseStore
+	IPStore
+}
+
+// A LeaseStore manages Lease storage.
+type LeaseStore interface {
 	// Leases returns all existing Leases. Note that the order of the Leases
 	// is unspecified. The caller must sort the leases for deterministic output.
 	Leases() (leases []*Lease, err error)
@@ -52,13 +67,10 @@ type Store interface {
 	// Attempting to delete an item that did not already exist should not
 	// return an error.
 	DeleteLease(key uint64) error
+}
 
-	// Purge purge Leases which expire on or before the specified point in time,
-	// and frees the IP addresses associated with the leases.
-	// Purge operations that specify the same point in time should be
-	// idempotent; the same rules apply as with DeleteLease.
-	Purge(t time.Time) error
-
+// An IPStore manages IP address allocation and storage.
+type IPStore interface {
 	// Subnets returns all existing subnets. Note that the order of the subnets
 	// is unspecified. The caller must sort the leases for deterministic output.
 	Subnets() (subnets []*net.IPNet, err error)
@@ -80,6 +92,13 @@ type Store interface {
 	// operations should be idempotent; the same rules apply as with DeleteLease.
 	// It returns an error if the subnet does not exist.
 	FreeIP(subnet, ip *net.IPNet) error
+}
+
+// PurgeStats contains statistics returned from a Store's Purge operation.
+type PurgeStats struct {
+	// FreedIPs contains a map of subnet CIDRs to the number of IP addresses
+	// that were freed within that subnet.
+	FreedIPs map[string]int
 }
 
 // A memoryStore is an in-memory Store implementation.
@@ -144,7 +163,11 @@ func (s *memoryStore) DeleteLease(key uint64) error {
 }
 
 // Purge implements Store.
-func (s *memoryStore) Purge(t time.Time) error {
+func (s *memoryStore) Purge(t time.Time) (*PurgeStats, error) {
+	ps := PurgeStats{
+		FreedIPs: make(map[string]int),
+	}
+
 	s.leasesMu.Lock()
 	defer s.leasesMu.Unlock()
 
@@ -170,18 +193,19 @@ func (s *memoryStore) Purge(t time.Time) error {
 	for sub := range s.subnets {
 		ip, cidr, err := net.ParseCIDR(sub)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cidr.IP = ip
 
 		for _, f := range freed {
 			if cidr.Contains(f.IP) {
+				ps.FreedIPs[sub]++
 				delete(s.subnets[sub], f.String())
 			}
 		}
 	}
 
-	return nil
+	return &ps, nil
 }
 
 // Subnets implements Store.
@@ -394,8 +418,12 @@ func (s *boltStore) DeleteLease(key uint64) error {
 }
 
 // Purge implements Store.
-func (s *boltStore) Purge(t time.Time) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+func (s *boltStore) Purge(t time.Time) (*PurgeStats, error) {
+	ps := PurgeStats{
+		FreedIPs: make(map[string]int),
+	}
+
+	err := s.db.Update(func(tx *bbolt.Tx) error {
 		// Track lease keys and IP addresses for removal after iteration
 		// completes.
 		var (
@@ -443,6 +471,8 @@ func (s *boltStore) Purge(t time.Time) error {
 			bSub := marshalIPNet(sub)
 			for _, f := range freed {
 				if sub.Contains(f.IP) {
+					ps.FreedIPs[sub.String()]++
+
 					if err := bSubnets.Bucket(bSub).Delete(marshalIPNet(f)); err != nil {
 						return err
 					}
@@ -452,6 +482,11 @@ func (s *boltStore) Purge(t time.Time) error {
 
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ps, nil
 }
 
 // Subnets implements Store.

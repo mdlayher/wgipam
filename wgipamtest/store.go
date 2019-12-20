@@ -281,8 +281,21 @@ func testPurgeOK(t *testing.T, s wgipam.Store) {
 
 	// Repeated purges with the same time should be idempotent.
 	for i := 0; i < 3; i++ {
-		if err := s.Purge(purge); err != nil {
+		stats, err := s.Purge(purge)
+		if err != nil {
 			t.Fatalf("failed to purge leases: %v", err)
+		}
+
+		// Expect addresses to be freed on the first iteration only.
+		var wantFreed int
+		if i == 0 {
+			wantFreed = 2
+		}
+
+		for k, v := range stats.FreedIPs {
+			if diff := cmp.Diff(wantFreed, v); diff != "" {
+				t.Fatalf("unexpected number of freed IPs for subnet %s (-want +got):\n%s", k, diff)
+			}
 		}
 	}
 

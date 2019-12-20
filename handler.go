@@ -20,14 +20,15 @@ import (
 	"time"
 
 	"github.com/mdlayher/wgdynamic-go"
-	"github.com/prometheus/client_golang/prometheus"
 )
+
+const namespace = "wgipamd"
 
 // A Handler handles IP allocation requests using the wg-dynamic protocol.
 type Handler struct {
 	// Leases specifies a Store for Lease storage. Leases must be non-nil or
 	// the Handler will panic.
-	Leases Store
+	Leases LeaseStore
 
 	// IPs specifies an IPAllocator for allocating and freeing client addresses.
 	// IPs must be non-nil or the Handler will panic.
@@ -170,46 +171,6 @@ func (h *Handler) renewLease(src net.Addr, l *Lease) (*wgdynamic.RequestIP, erro
 		LeaseStart: l.Start,
 		LeaseTime:  l.Length,
 	}, nil
-}
-
-// HandlerMetrics contains metrics related to Handler operations.
-type HandlerMetrics struct {
-	RequestsTotal *prometheus.CounterVec
-	ErrorsTotal   *prometheus.CounterVec
-}
-
-// NewHandlerMetrics produces a HandlerMetrics structure which registers its
-// metrics with reg and adds an interface label ifi.
-func NewHandlerMetrics(reg *prometheus.Registry, ifi string) *HandlerMetrics {
-	const (
-		namespace = "wgipamd"
-		subsystem = "server"
-	)
-
-	labels := prometheus.Labels{
-		"interface": ifi,
-	}
-
-	hm := &HandlerMetrics{
-		RequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "requests_total",
-			Help:      "The total number of requests from clients using the wg-dynamic protocol.",
-		}, []string{"interface", "operation", "status"}).MustCurryWith(labels),
-
-		ErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "errors_total",
-			Help:      "Any errors returned to clients using the wg-dynamic protocol.",
-		}, []string{"interface", "operation", "type"}).MustCurryWith(labels),
-	}
-
-	reg.MustRegister(hm.RequestsTotal)
-	reg.MustRegister(hm.ErrorsTotal)
-
-	return hm
 }
 
 // logf logs a formatted message about src, if h.Log is configured.

@@ -59,14 +59,14 @@ type IPAllocator interface {
 // A multiIPAllocator is an IPAllocator that wraps several internal IPAllocators,
 // so different allocations strategies may be used for different IP families.
 type multiIPAllocator struct {
-	s Store
+	s IPStore
 	m map[Family][]IPAllocator
 }
 
 // DualStackIPAllocator returns an IPAllocator which can allocate both IPv4 and
 // IPv6 addresses. It is a convenience wrapper around other IPAllocators that
 // automatically allocates addresses from the input subnets as appropriate.
-func DualStackIPAllocator(store Store, subnets []Subnet) (IPAllocator, error) {
+func DualStackIPAllocator(store IPStore, subnets []Subnet) (IPAllocator, error) {
 	// At least one subnet must be specified to serve.
 	if len(subnets) == 0 {
 		return nil, errors.New("wgipam: DualStackIPAllocator must have one or more subnets to serve")
@@ -202,7 +202,7 @@ func (mia *multiIPAllocator) Free(ip *net.IPNet) error {
 // iterating through its input subnets.
 type simpleIPAllocator struct {
 	f     Family
-	s     Store
+	s     IPStore
 	mu    sync.Mutex
 	sub   Subnet
 	c     *ipaddr.Cursor
@@ -212,7 +212,7 @@ type simpleIPAllocator struct {
 
 // SimpleIPAllocator returns an IPAllocator which allocates IP addresses in order
 // by iterating through addresses in a subnet.
-func SimpleIPAllocator(store Store, subnet Subnet) (IPAllocator, error) {
+func SimpleIPAllocator(store IPStore, subnet Subnet) (IPAllocator, error) {
 	if err := subnet.Validate(); err != nil {
 		return nil, fmt.Errorf("wgipam: invalid subnet %s: %v", &subnet.Subnet, err)
 	}
