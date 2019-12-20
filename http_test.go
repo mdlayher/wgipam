@@ -29,13 +29,21 @@ import (
 func TestHTTPHandler(t *testing.T) {
 	t.Parallel()
 
+	store := MemoryStore()
+
+	if err := store.SaveSubnet(MustCIDR("192.0.2.0/30")); err != nil {
+		t.Fatalf("failed to store IPv4 subnet: %v", err)
+	}
+	if err := store.SaveSubnet(MustCIDR("2001:db8::/126")); err != nil {
+		t.Fatalf("failed to store IPv6 subnet: %v", err)
+	}
+
 	l := &Lease{
 		IPs:    []*net.IPNet{MustCIDR("192.0.2.0/32"), MustCIDR("2001:db8::/128")},
 		Start:  time.Unix(1, 0),
 		Length: 10 * time.Second,
 	}
 
-	store := MemoryStore()
 	if err := store.SaveLease(0, l); err != nil {
 		t.Fatalf("failed to store lease: %v", err)
 	}
@@ -43,29 +51,30 @@ func TestHTTPHandler(t *testing.T) {
 	tests := []struct {
 		name, path string
 		ok         bool
-		leases     []jsonLease
+		ac         apiContainer
 	}{
-		// We have some tests elswhere for more intricate tests such as
+		// We have some tests elsewhere for more intricate tests such as
 		// Prometheus metrics usage, to these tests will mostly focus on
 		// the JSON API aspects of the HTTP debug handler.
 		{
-			name: "index",
-			path: "/",
-			ok:   true,
+			name: "not found",
+			path: "/notfound",
 		},
 		{
-			name: "unknown interface",
-			path: "/leases/wgnotexist0",
-		},
-		{
-			name: "leases OK",
-			path: "/leases/wg0",
+			name: "interfaces OK",
+			path: "/api/v0/interfaces",
 			ok:   true,
-			leases: []jsonLease{{
-				IPs:    []string{l.IPs[0].String(), l.IPs[1].String()},
-				Start:  int(l.Start.Unix()),
-				Length: int(l.Length.Seconds()),
-			}},
+			ac: apiContainer{
+				Interfaces: []jsonInterface{{
+					Name:    "wg0",
+					Subnets: []string{"192.0.2.0/30", "2001:db8::/126"},
+					Leases: []jsonLease{{
+						IPs:    []string{l.IPs[0].String(), l.IPs[1].String()},
+						Start:  int(l.Start.Unix()),
+						Length: int(l.Length.Seconds()),
+					}},
+				}},
+			},
 		},
 	}
 
@@ -103,17 +112,17 @@ func TestHTTPHandler(t *testing.T) {
 				t.Fatalf("unexpected HTTP status (-want +got):\n%s", diff)
 			}
 
-			if !tt.ok || tt.leases == nil {
+			if !tt.ok {
 				return
 			}
 
 			var ac apiContainer
 			if err := json.NewDecoder(res.Body).Decode(&ac); err != nil {
-				t.Fatalf("failed to decode leases: %v", err)
+				t.Fatalf("failed to decode API output: %v", err)
 			}
 
-			if diff := cmp.Diff(tt.leases, ac.Leases); diff != "" {
-				t.Fatalf("unexpected leases(-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.ac, ac); diff != "" {
+				t.Fatalf("unexpected API output (-want +got):\n%s", diff)
 			}
 		})
 	}

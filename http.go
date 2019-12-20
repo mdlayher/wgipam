@@ -19,7 +19,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/pprof"
-	"path"
 	"sort"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -45,15 +44,7 @@ func NewHTTPHandler(
 		stores: stores,
 	}
 
-	// TODO(mdlayher): chances are pretty good that this will evolve into
-	// something more than a "debug" API; e.g. adding the ability to immediately
-	// revoke a lease and etc. This is something worth considering when adding
-	// functionality to the API. At this time there are no stability guarantees.
-
-	// Create a route to dump leases for each interface.
-	for k := range h.stores {
-		mux.HandleFunc("/leases/"+k, h.leases)
-	}
+	mux.HandleFunc("/api/v0/interfaces", h.interfaces)
 
 	// Optionally enable Prometheus and pprof support.
 	if usePrometheus {
@@ -82,55 +73,84 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.h.ServeHTTP(w, r)
 }
 
-// leases returns a JSON listing of the leases for an interface.
-func (h *HTTPHandler) leases(w http.ResponseWriter, r *http.Request) {
-	// Get the interface name from the last element of the path.
-	s, ok := h.stores[path.Base(r.URL.Path)]
-	if !ok {
-		// TODO(mdlayher): is this impossible?
-		http.NotFound(w, r)
-		return
-	}
-
-	leases, err := s.Leases()
-	if err != nil {
-		http.Error(
-			w,
-			// This is a debug API so it's probably okay to show Go errors.
-			fmt.Sprintf("failed to list leases: %v", err),
-			http.StatusInternalServerError,
-		)
-		return
-	}
-
-	// Sort leases by when they started.
-	sort.Slice(leases, func(i, j int) bool {
-		return leases[i].Start.Before(leases[j].Start)
-	})
-
-	// Unpack leases into JSON-friendly format.
+// interfaces returns JSON metadata about wgipam interfaces.
+func (h *HTTPHandler) interfaces(w http.ResponseWriter, r *http.Request) {
 	ac := apiContainer{
-		Leases: make([]jsonLease, 0, len(leases)),
+		Interfaces: make([]jsonInterface, 0, len(h.stores)),
 	}
-	for _, l := range leases {
-		ips := make([]string, 0, len(l.IPs))
-		for _, ip := range l.IPs {
-			ips = append(ips, ip.String())
+
+	for ifi, s := range h.stores {
+		leases, err := s.Leases()
+		if err != nil {
+			http.Error(
+				w,
+				// This is a debug API so it's probably okay to show Go errors.
+				fmt.Sprintf("failed to list leases: %v", err),
+				http.StatusInternalServerError,
+			)
+			return
 		}
 
-		ac.Leases = append(ac.Leases, jsonLease{
-			IPs:    ips,
-			Start:  int(l.Start.Unix()),
-			Length: int(l.Length.Seconds()),
+		// Sort leases by when they started.
+		sort.Slice(leases, func(i, j int) bool {
+			return leases[i].Start.Before(leases[j].Start)
 		})
+
+		subnets, err := s.Subnets()
+		if err != nil {
+			http.Error(
+				w,
+				// This is a debug API so it's probably okay to show Go errors.
+				fmt.Sprintf("failed to list subnets: %v", err),
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		ssubs := make([]string, 0, len(subnets))
+		for _, s := range subnets {
+			ssubs = append(ssubs, s.String())
+		}
+
+		sort.Strings(ssubs)
+
+		// Unpack leases into JSON-friendly format.
+		jif := jsonInterface{
+			Name:    ifi,
+			Subnets: ssubs,
+		}
+		for _, l := range leases {
+			ips := make([]string, 0, len(l.IPs))
+			for _, ip := range l.IPs {
+				ips = append(ips, ip.String())
+			}
+
+			jif.Leases = append(jif.Leases, jsonLease{
+				IPs:    ips,
+				Start:  int(l.Start.Unix()),
+				Length: int(l.Length.Seconds()),
+			})
+		}
+
+		ac.Interfaces = append(ac.Interfaces, jif)
 	}
+
+	sort.Slice(ac.Interfaces, func(i, j int) bool {
+		return ac.Interfaces[i].Name < ac.Interfaces[j].Name
+	})
 
 	_ = json.NewEncoder(w).Encode(ac)
 }
 
 // An apiContainer is the top-level API response object.
 type apiContainer struct {
-	Leases []jsonLease `json:"leases"`
+	Interfaces []jsonInterface `json:"interfaces"`
+}
+
+type jsonInterface struct {
+	Name    string      `json:"name"`
+	Subnets []string    `json:"subnets"`
+	Leases  []jsonLease `json:"leases"`
 }
 
 // A jsonLease is the JSON representation of a Lease.
