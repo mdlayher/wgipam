@@ -143,7 +143,10 @@ func (s *Server) runServer(ctx context.Context, ifi config.Interface, store wgip
 	logf("listening on %q, lease duration: %s, serving: %s",
 		l.Addr(), ifi.LeaseDuration, subnetsString(ifi.Subnets))
 
-	ips := wgipam.IPStoreMetrics(s.reg, ifi.Name, ifi.Subnets, store)
+	ips, err := wgipam.IPStoreMetrics(s.reg, ifi.Name, ifi.Subnets, store)
+	if err != nil {
+		return fmt.Errorf("failed to create IP store metrics: %v", err)
+	}
 
 	ipa, err := wgipam.DualStackIPAllocator(ips, ifi.Subnets)
 	if err != nil {

@@ -74,7 +74,7 @@ type metricsIPStore struct {
 
 // IPStoreMetrics produces a Store which gathers Prometheus metrics for IPStore
 // operations.
-func IPStoreMetrics(reg *prometheus.Registry, ifi string, subnets []Subnet, ips Store) Store {
+func IPStoreMetrics(reg *prometheus.Registry, ifi string, subnets []Subnet, ips Store) (Store, error) {
 	const subsystem = "store"
 
 	mis := &metricsIPStore{
@@ -109,10 +109,26 @@ func IPStoreMetrics(reg *prometheus.Registry, ifi string, subnets []Subnet, ips 
 	reg.MustRegister(mis.LastPurge)
 
 	for _, s := range subnets {
+		// Determine the number of allocatable IPs in this subnet.
 		mis.SubnetAllocatableSize.WithLabelValues(s.Subnet.String()).Set(allocatableSize(s))
 	}
 
-	return mis
+	// Determine the number of already allocated IPs in each of the existing
+	// subnets, so we can properly initialize the gauges.
+	registered, err := ips.Subnets()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range registered {
+		ips, err := ips.AllocatedIPs(r)
+		if err != nil {
+			return nil, err
+		}
+
+		mis.IPsAllocated.WithLabelValues(r.String()).Set(float64(len(ips)))
+	}
+
+	return mis, nil
 }
 
 // AllocateIP implements IPStore.
